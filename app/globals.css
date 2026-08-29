@@ -1,0 +1,50 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  color: theme("colors.ink");
+  font-family: var(--font-body), ui-sans-serif, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Subtle paper grain so flat pastel fields don't look like plain CSS */
+.paper-grain {
+  position: relative;
+}
+.paper-grain::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.05;
+  background-image: radial-gradient(circle, #5b4b45 1px, transparent 1px);
+  background-size: 6px 6px;
+}
+
+/* Respect reduced motion everywhere */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+.focus-ring:focus-visible {
+  outline: 3px solid theme("colors.button.green");
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+::selection {
+  background: theme("colors.star");
+  color: theme("colors.ink");
+}
