@@ -16,7 +16,7 @@ export interface Task {
   energy_level: EnergyLevel;
   estimated_minutes: number;
   category?: string; // <-- ADD THIS LINE
-  due_hint?: string | null;
+  due_date?: string | null; // ISO "YYYY-MM-DD" — the actual scheduled day, or null if unscheduled
   scheduled_time?: string | null;
   starter_tip?: string | null;
   subtasks: Subtask[];

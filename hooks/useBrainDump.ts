@@ -1,5 +1,19 @@
 import { useState } from "react";
 import { useTaskStore } from "@/store/useTaskStore";
+import { addDays, toISODate } from "@/lib/dates";
+
+// The AI only ever classifies loosely ("Today" / "Tomorrow" / "Later") -
+// we don't trust an LLM to do reliable date arithmetic. The actual
+// calendar date is computed here from the browser's real clock, then
+// stored as due_date so the weekly Timeline view can place it correctly.
+// "Later" becomes unscheduled (null) rather than a vague catch-all bucket
+// the user can't act on.
+function dueHintToDate(hint: string | null | undefined): string | null {
+  const today = new Date();
+  if (hint === "Today") return toISODate(today);
+  if (hint === "Tomorrow") return toISODate(addDays(today, 1));
+  return null;
+}
 
 export function useBrainDump() {
   const [isLoadingAi, setIsLoadingAi] = useState(false);
@@ -27,10 +41,10 @@ export function useBrainDump() {
           energy_level: t.energy_level,
           estimated_minutes: t.estimated_minutes,
           category: t.category,
-          due_hint: t.due_hint || null,
+          due_date: dueHintToDate(t.due_hint),
           subtasks: []
         }));
-        
+
         addMultipleTasks(formatted);
         return true; // Indicates success
       }

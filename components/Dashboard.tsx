@@ -14,13 +14,19 @@ import {
   LayoutGrid,
   Receipt,
   Flame,
+  ChevronLeft,
+  ChevronRight,
+  Inbox,
   type LucideIcon,
 } from "lucide-react";
 import { useTaskStore } from "@/store/useTaskStore";
 import { useBrainDump } from "@/hooks/useBrainDump";
+import { getWeekDates, toISODate, formatDayLabel, formatWeekRangeLabel } from "@/lib/dates";
 import TaskCard from "./TaskCard";
 import FocusModal from "./FocusModal";
 import ReceiptExport from "./ReceiptExport";
+
+const UNSCHEDULED = "unscheduled" as const;
 
 interface DashboardProps {
   onBackToLanding: () => void;
@@ -84,7 +90,21 @@ export default function Dashboard({ onBackToLanding }: DashboardProps) {
 
   const [activeView, setActiveView] = useState<ViewMode>("Categories");
   const [activeCategory, setActiveCategory] = useState<string>("All");
-  const [activeTimeline, setActiveTimeline] = useState<string>("Today");
+
+  // Weekly Timeline: a real Mon-Sun week of dates instead of a vague
+  // Today/Tomorrow/Later enum, so tasks land on the actual day they're
+  // scheduled for and users can flip between weeks like a planner.
+  const [weekOffset, setWeekOffset] = useState(0);
+  const [selectedDay, setSelectedDay] = useState<string>(() => toISODate(new Date()));
+  const weekDates = useMemo(() => getWeekDates(weekOffset), [weekOffset]);
+
+  const changeWeek = (delta: number) => {
+    const newOffset = weekOffset + delta;
+    const newWeek = getWeekDates(newOffset);
+    setWeekOffset(newOffset);
+    const todayInNewWeek = newWeek.find((d) => d.isToday);
+    setSelectedDay(todayInNewWeek ? todayInNewWeek.iso : newWeek[0].iso);
+  };
 
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [confirmingClear, setConfirmingClear] = useState(false);
@@ -110,11 +130,18 @@ export default function Dashboard({ onBackToLanding }: DashboardProps) {
     [tasks]
   );
 
-  const timelineFilters = ["Today", "Tomorrow", "Later"];
-
   const pendingTasks = useMemo(() => tasks.filter((t) => !t.completed), [tasks]);
   const completedCount = tasks.length - pendingTasks.length;
   const progressPct = tasks.length === 0 ? 0 : Math.round((completedCount / tasks.length) * 100);
+
+  const weekDayCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const t of pendingTasks) {
+      const key = t.due_date || UNSCHEDULED;
+      counts.set(key, (counts.get(key) || 0) + 1);
+    }
+    return counts;
+  }, [pendingTasks]);
 
   const displayedTasks = useMemo(() => {
     if (activeView === "Completed") {
@@ -124,15 +151,12 @@ export default function Dashboard({ onBackToLanding }: DashboardProps) {
       return activeCategory === "All" ? pendingTasks : pendingTasks.filter((t) => t.category === activeCategory);
     }
     if (activeView === "Timeline") {
-      return pendingTasks.filter((t) => {
-        const hint = t.due_hint?.toLowerCase() || "";
-        if (activeTimeline === "Today") return hint.includes("today") || hint.includes("tonight");
-        if (activeTimeline === "Tomorrow") return hint.includes("tomorrow");
-        return !hint.includes("today") && !hint.includes("tonight") && !hint.includes("tomorrow");
-      });
+      return pendingTasks.filter((t) =>
+        selectedDay === UNSCHEDULED ? !t.due_date : t.due_date === selectedDay
+      );
     }
     return tasks;
-  }, [tasks, pendingTasks, activeView, activeCategory, activeTimeline]);
+  }, [tasks, pendingTasks, activeView, activeCategory, selectedDay]);
 
   // --- Toast helpers ---
   const pushToast = useCallback((message: string, tone: Toast["tone"] = "info") => {
@@ -179,7 +203,7 @@ export default function Dashboard({ onBackToLanding }: DashboardProps) {
         energy_level: "high_focus",
         estimated_minutes: 25,
         category: activeCategory !== "All" ? activeCategory : "Inbox",
-        due_hint: activeTimeline === "Today" ? "Today" : null,
+        due_date: activeView === "Timeline" && selectedDay !== UNSCHEDULED ? selectedDay : null,
         subtasks: [],
       });
       setInputVal("");
@@ -258,8 +282,11 @@ export default function Dashboard({ onBackToLanding }: DashboardProps) {
     }
     if (activeView === "Timeline") {
       return {
-        title: `No tasks for ${activeTimeline.toLowerCase()} yet.`,
-        sub: "Add one on the left, or switch timelines.",
+        title:
+          selectedDay === UNSCHEDULED
+            ? "Nothing unscheduled right now."
+            : `No tasks for ${formatDayLabel(selectedDay)} yet.`,
+        sub: "Add one on the left, or pick another day.",
         icon: Calendar,
       };
     }
@@ -271,7 +298,7 @@ export default function Dashboard({ onBackToLanding }: DashboardProps) {
       sub: "Use the AI Brain Dump on the left to organize your thoughts.",
       icon: LayoutGrid,
     };
-  }, [activeView, activeTimeline, activeCategory]);
+  }, [activeView, selectedDay, activeCategory]);
 
   const EmptyIcon = emptyStateCopy.icon;
 
@@ -538,24 +565,68 @@ export default function Dashboard({ onBackToLanding }: DashboardProps) {
             )}
 
             {activeView === "Timeline" && (
-              <div
-                className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-hide"
-                role="tablist"
-                aria-label="Filter by timeline"
-              >
-                {timelineFilters.map((time) => (
+              <div className="flex flex-col gap-2">
+                <div className="flex items-center justify-between px-0.5">
                   <button
-                    key={time}
+                    onClick={() => changeWeek(-1)}
+                    aria-label="Previous week"
+                    className="p-1.5 rounded-lg text-ink/70 hover:bg-ink/10 hover:text-ink transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/30"
+                  >
+                    <ChevronLeft size={16} />
+                  </button>
+                  <span className="text-xs font-semibold text-ink/70">{formatWeekRangeLabel(weekDates)}</span>
+                  <button
+                    onClick={() => changeWeek(1)}
+                    aria-label="Next week"
+                    className="p-1.5 rounded-lg text-ink/70 hover:bg-ink/10 hover:text-ink transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/30"
+                  >
+                    <ChevronRight size={16} />
+                  </button>
+                </div>
+
+                <div
+                  className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-hide"
+                  role="tablist"
+                  aria-label="Filter by day"
+                >
+                  {weekDates.map((day) => {
+                    const count = weekDayCounts.get(day.iso) || 0;
+                    const isSelected = selectedDay === day.iso;
+                    return (
+                      <button
+                        key={day.iso}
+                        role="tab"
+                        aria-selected={isSelected}
+                        onClick={() => setSelectedDay(day.iso)}
+                        className={`flex flex-col items-center shrink-0 min-w-[3rem] px-2 py-1.5 rounded-2xl transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/30 ${
+                          isSelected
+                            ? "bg-ink text-white"
+                            : day.isToday
+                            ? "bg-folder-pink/25 text-ink"
+                            : "bg-ink/8 text-ink/80 hover:bg-ink/15"
+                        }`}
+                      >
+                        <span className="text-[10px] font-semibold uppercase tracking-wide opacity-80">{day.weekdayShort}</span>
+                        <span className="text-sm font-bold leading-none mt-0.5">{day.dayNum}</span>
+                        <span className="text-[9px] leading-none mt-1 opacity-70 h-2.5">{count > 0 ? count : ""}</span>
+                      </button>
+                    );
+                  })}
+
+                  <button
                     role="tab"
-                    aria-selected={activeTimeline === time}
-                    onClick={() => setActiveTimeline(time)}
-                    className={`whitespace-nowrap px-4 py-1.5 rounded-full text-xs font-semibold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/30 ${
-                      activeTimeline === time ? "bg-ink text-white" : "bg-ink/8 text-ink/80 hover:bg-ink/15"
+                    aria-selected={selectedDay === UNSCHEDULED}
+                    onClick={() => setSelectedDay(UNSCHEDULED)}
+                    className={`flex items-center gap-1.5 shrink-0 px-3.5 py-1.5 rounded-full text-xs font-semibold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/30 ${
+                      selectedDay === UNSCHEDULED ? "bg-ink text-white" : "bg-ink/8 text-ink/80 hover:bg-ink/15"
                     }`}
                   >
-                    {time}
+                    <Inbox size={12} /> Unscheduled
+                    {(weekDayCounts.get(UNSCHEDULED) || 0) > 0 && (
+                      <span className="opacity-60">({weekDayCounts.get(UNSCHEDULED)})</span>
+                    )}
                   </button>
-                ))}
+                </div>
               </div>
             )}
 

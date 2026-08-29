@@ -14,6 +14,7 @@ interface TaskState {
   setTasksBreakingDown: (id: string, isBreakingDown: boolean) => void;
   updateTaskSubtasks: (id: string, subtasks: any[]) => void;
   moveCategory: (taskId: string, newCategory: string) => void;
+  setDueDate: (taskId: string, dueDate: string | null) => void;
   reorderTasks: (sortedTasks: Task[]) => void;
 }
 
@@ -75,5 +76,7 @@ export const useTaskStore = create<TaskState>((set) => ({
     tasks: state.tasks.map((t) => t.id === taskId ? { ...t, category: newCategory } : t)
   })),
 
-  
+  setDueDate: (taskId, dueDate) => set((state) => ({
+    tasks: state.tasks.map((t) => t.id === taskId ? { ...t, due_date: dueDate } : t)
+  })),
 }));

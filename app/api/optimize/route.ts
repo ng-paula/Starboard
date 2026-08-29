@@ -9,7 +9,7 @@ const TaskSchema = z.object({
   priority: z.enum(["urgent_important", "important", "low_priority"]),
   energy_level: z.enum(["high_focus", "quick_admin", "low_energy"]),
   estimated_minutes: z.number(),
-  due_hint: z.enum(["Today", "Tomorrow", "Later"]).nullable().optional(),
+  due_date: z.string().nullable().optional(),
   completed: z.boolean().default(false),
   subtasks: z.array(z.any()).optional().default([]),
 });
@@ -38,7 +38,8 @@ export async function POST(req: Request) {
       2. Place high_focus tasks during peak mental momentum.
       3. Place low_energy or quick_admin tasks near the end.
       Return the exact same task objects, just sorted in this optimal order.
-      
+      Do not invent or modify due_date - copy it through unchanged (including null) for every task.
+
       Tasks: ${JSON.stringify(tasks)}`,
       config: {
         responseMimeType: "application/json",
@@ -56,7 +57,7 @@ export async function POST(req: Request) {
                   priority: { type: Type.STRING, enum: ["urgent_important", "important", "low_priority"] },
                   energy_level: { type: Type.STRING, enum: ["high_focus", "quick_admin", "low_energy"] },
                   estimated_minutes: { type: Type.INTEGER },
-                  due_hint: { type: Type.STRING, enum: ["Today", "Tomorrow", "Later"] },
+                  due_date: { type: Type.STRING, nullable: true },
                   completed: { type: Type.BOOLEAN },
                 },
                 required: ["id", "title", "category", "priority", "energy_level", "estimated_minutes", "completed"],

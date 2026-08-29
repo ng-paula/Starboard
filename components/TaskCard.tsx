@@ -1,9 +1,10 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
-import { Check, Sparkles, Play, Trash2, Clock, Zap, ChevronDown, ChevronUp, Plus, Calendar, Folder } from "lucide-react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
+import { Check, Sparkles, Play, Trash2, Clock, Zap, ChevronDown, ChevronUp, Plus, Calendar, Folder, X } from "lucide-react";
 import type { Task } from "@/lib/types";
 import { useTaskStore } from "@/store/useTaskStore";
+import { getWeekDates, formatShortDate } from "@/lib/dates";
 
 interface TaskCardProps {
   task: Task;
@@ -12,22 +13,26 @@ interface TaskCardProps {
 
 export default function TaskCard({ task, onStartFocus }: TaskCardProps) {
   // 1. Grab all our actions directly from the Zustand store!
-  const { 
-    toggleTask, 
-    deleteTask, 
-    toggleSubtask, 
-    addSubtaskManual, 
-    moveCategory, 
-    setTasksBreakingDown, 
-    updateTaskSubtasks 
+  const {
+    toggleTask,
+    deleteTask,
+    toggleSubtask,
+    addSubtaskManual,
+    moveCategory,
+    setDueDate,
+    setTasksBreakingDown,
+    updateTaskSubtasks
   } = useTaskStore();
 
   const [isExpanded, setIsExpanded] = useState(false);
   const [newSubtaskTitle, setNewSubtaskTitle] = useState("");
   const [isAddingSubtask, setIsAddingSubtask] = useState(false);
-  
+
   const [isEditingCategory, setIsEditingCategory] = useState(false);
   const [categoryInput, setCategoryInput] = useState(task.category || "Inbox");
+
+  const [isEditingDueDate, setIsEditingDueDate] = useState(false);
+  const currentWeek = useMemo(() => getWeekDates(0), []);
 
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const confirmDeleteTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -171,10 +176,46 @@ export default function TaskCard({ task, onStartFocus }: TaskCardProps) {
               <Clock size={10} /> {task.estimated_minutes}m
             </span>
 
-            {task.due_hint && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-stripe-blue/25 px-2 py-0.5 text-[10px] font-medium text-ink border border-stripe-blue/50">
-                <Calendar size={10} /> {task.due_hint}
-              </span>
+            {isEditingDueDate ? (
+              <div className="inline-flex items-center gap-0.5 rounded-full bg-stripe-blue/20 border border-stripe-blue/50 px-1 py-0.5">
+                {currentWeek.map((day) => (
+                  <button
+                    key={day.iso}
+                    type="button"
+                    onClick={() => {
+                      setDueDate(task.id, day.iso);
+                      setIsEditingDueDate(false);
+                    }}
+                    title={formatShortDate(day.iso)}
+                    className={`w-5 h-5 flex items-center justify-center rounded-full text-[9px] font-bold transition-colors ${
+                      task.due_date === day.iso ? "bg-ink text-white" : "text-ink/70 hover:bg-ink/10"
+                    }`}
+                  >
+                    {day.weekdayShort.charAt(0)}
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDueDate(task.id, null);
+                    setIsEditingDueDate(false);
+                  }}
+                  title="Clear date"
+                  className="w-5 h-5 flex items-center justify-center rounded-full text-ink/50 hover:bg-danger/10 hover:text-danger transition-colors"
+                >
+                  <X size={10} />
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => !task.completed && setIsEditingDueDate(true)}
+                disabled={task.completed}
+                className="inline-flex items-center gap-1 rounded-full bg-stripe-blue/25 px-2 py-0.5 text-[10px] font-medium text-ink border border-stripe-blue/50 hover:bg-stripe-blue/40 transition-colors disabled:opacity-50"
+                title="Schedule this task"
+              >
+                <Calendar size={10} /> {task.due_date ? formatShortDate(task.due_date) : "No date"}
+              </button>
             )}
           </div>
 
