@@ -16,14 +16,17 @@ const config: Config = {
         folder: {
           pink: "#F6C9D9", // primary folder pink
           pinkDark: "#E9A9C2", // folder shadow / crease
+          pinkDeep: "#B5567A", // solid pink for buttons carrying white text (4.6:1)
         },
         star: "#FDE896", // soft yellow star
         button: {
           green: "#7BA98A", // sewing button green
           greenDark: "#5C8A6C",
+          greenDeep: "#4E7A5D", // solid green for CTA buttons carrying white text (4.9:1)
         },
         washi: "#F2A6B0", // dotted washi tape
         ink: "#5B4B45", // warm brown ink for text
+        danger: "#B85560", // dusty brand-red for destructive actions (4.7:1 with white)
         dash: {
           bg: "#FDF7EE", // calmer dashboard backdrop
           card: "#FFFFFF",

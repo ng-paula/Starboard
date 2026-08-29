@@ -99,7 +99,7 @@ export default function ReceiptExport({ tasks, onClose }: ReceiptExportProps) {
         <button
           onClick={handleDownload}
           disabled={exporting}
-          className="mt-4 flex w-full items-center justify-center gap-2 rounded-full bg-slate-900 px-4 py-3 text-sm font-semibold text-white shadow-lg transition-opacity disabled:opacity-40"
+          className="mt-4 flex w-full items-center justify-center gap-2 rounded-full bg-ink px-4 py-3 text-sm font-semibold text-white shadow-lg transition-opacity disabled:opacity-40"
         >
           {exporting ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
           {exporting ? "Printing..." : "Download Receipt"}

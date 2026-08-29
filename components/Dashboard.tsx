@@ -51,22 +51,22 @@ const VIEWS: {
     id: "Categories",
     label: "Folders",
     icon: Folder,
-    activeClasses: "bg-pink-500 text-white shadow-sm",
-    ringClass: "focus-visible:ring-pink-300",
+    activeClasses: "bg-ink text-white shadow-sm",
+    ringClass: "focus-visible:ring-ink/40",
   },
   {
     id: "Timeline",
     label: "Timeline",
     icon: Calendar,
-    activeClasses: "bg-sky-500 text-white shadow-sm",
-    ringClass: "focus-visible:ring-sky-300",
+    activeClasses: "bg-ink text-white shadow-sm",
+    ringClass: "focus-visible:ring-ink/40",
   },
   {
     id: "Completed",
     label: "Completed",
     icon: CheckSquare,
-    activeClasses: "bg-emerald-500 text-white shadow-sm",
-    ringClass: "focus-visible:ring-emerald-300",
+    activeClasses: "bg-ink text-white shadow-sm",
+    ringClass: "focus-visible:ring-ink/40",
   },
 ];
 
@@ -276,22 +276,22 @@ export default function Dashboard({ onBackToLanding }: DashboardProps) {
 
   return (
     <div
-      className="min-h-screen w-full relative"
+      className="min-h-screen w-full relative paper-grain"
       style={{
-        backgroundColor: "#ffffff",
+        backgroundColor: "#FDF7EE",
         backgroundImage:
-          "radial-gradient(circle, rgba(236,72,153,0.18) 2px, transparent 2px), radial-gradient(circle, rgba(236,72,153,0.18) 2px, transparent 2px)",
+          "radial-gradient(circle, rgba(233,169,194,0.35) 2px, transparent 2px), radial-gradient(circle, rgba(233,169,194,0.35) 2px, transparent 2px)",
         backgroundSize: "48px 48px, 48px 48px",
         backgroundPosition: "0 0, 24px 24px",
       }}
     >
       {/* NAVBAR */}
-      <header className="sticky top-0 z-40 w-full bg-[#BFE3F2]/90 backdrop-blur-md border-b border-[#8FC4DE]">
+      <header className="sticky top-0 z-40 w-full bg-stripe-blue/90 backdrop-blur-md border-b border-folder-pinkDark/50">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-3">
           <button
             onClick={onBackToLanding}
             aria-label="Back to landing page"
-            className="flex items-center shrink-0 -ml-1 rounded-xl transition-transform hover:scale-105 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-pink-300"
+            className="flex items-center shrink-0 -ml-1 rounded-xl transition-transform hover:scale-105 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-folder-pinkDeep/40"
           >
             <img src="/sb_logo.png" alt="Starboard" className="h-14 w-auto" />
           </button>
@@ -311,7 +311,7 @@ export default function Dashboard({ onBackToLanding }: DashboardProps) {
                   aria-selected={isActive}
                   onClick={() => setActiveView(view.id)}
                   className={`flex items-center gap-1.5 px-4 py-1.5 rounded-full text-xs font-semibold transition-all focus-visible:outline-none focus-visible:ring-2 ${view.ringClass} ${
-                    isActive ? view.activeClasses : "text-slate-600 hover:bg-white"
+                    isActive ? view.activeClasses : "text-ink hover:bg-white"
                   }`}
                 >
                   <Icon size={14} /> {view.label}
@@ -321,13 +321,13 @@ export default function Dashboard({ onBackToLanding }: DashboardProps) {
           </nav>
 
           <div className="flex items-center gap-2 shrink-0">
-            <span className="hidden md:flex items-center gap-1.5 text-xs font-semibold text-slate-600 bg-white/60 px-3 py-1.5 rounded-full">
-              <Sparkles size={12} className="text-pink-400" />
+            <span className="hidden md:flex items-center gap-1.5 text-xs font-semibold text-ink bg-white/60 px-3 py-1.5 rounded-full">
+              <Sparkles size={12} className="text-folder-pinkDeep" />
               {pendingTasks.length} left
             </span>
             <button
               onClick={handleWhatNow}
-              className="flex items-center gap-1.5 px-3.5 py-2 rounded-full bg-emerald-400 hover:bg-emerald-500 text-white text-xs font-bold shadow-sm transition-all active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300"
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-full bg-button-greenDeep hover:bg-button-greenDark text-white text-xs font-bold shadow-sm transition-all active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-button-greenDeep/50"
             >
               <Zap size={14} className="fill-current" /> <span className="hidden sm:inline">What Now?</span>
             </button>
@@ -350,7 +350,7 @@ export default function Dashboard({ onBackToLanding }: DashboardProps) {
                 aria-selected={isActive}
                 onClick={() => setActiveView(view.id)}
                 className={`flex items-center gap-1.5 whitespace-nowrap px-3.5 py-1.5 rounded-full text-xs font-semibold transition-all focus-visible:outline-none focus-visible:ring-2 ${view.ringClass} ${
-                  isActive ? view.activeClasses : "bg-white/60 text-slate-600"
+                  isActive ? view.activeClasses : "bg-white/60 text-ink"
                 }`}
               >
                 <Icon size={13} /> {view.label}
@@ -371,7 +371,7 @@ export default function Dashboard({ onBackToLanding }: DashboardProps) {
             key={t.id}
             role="status"
             className={`px-4 py-3 rounded-xl shadow-lg text-sm font-medium text-white animate-in fade-in slide-in-from-top-2 ${
-              t.tone === "error" ? "bg-rose-500" : t.tone === "success" ? "bg-emerald-500" : "bg-slate-800"
+              t.tone === "error" ? "bg-danger" : t.tone === "success" ? "bg-button-greenDeep" : "bg-ink"
             }`}
           >
             {t.message}
@@ -383,17 +383,17 @@ export default function Dashboard({ onBackToLanding }: DashboardProps) {
         {/* LEFT COLUMN: Add task + progress */}
         <aside className="w-full lg:w-80 flex flex-col gap-6 shrink-0">
           <div className="flex flex-col gap-5 sticky top-24">
-            <div className="bg-white rounded-3xl p-5 shadow-[0_6px_24px_rgba(233,169,194,0.18)] border-2 border-dashed border-pink-200 flex flex-col gap-2">
+            <div className="bg-white rounded-3xl p-5 shadow-[0_6px_24px_rgba(233,169,194,0.18)] border-2 border-dashed border-folder-pink/60 flex flex-col gap-2">
               <form onSubmit={handleAddTask} className="flex flex-col gap-2">
                 <div className="flex items-center justify-between px-1">
-                  <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Add task</span>
+                  <span className="text-[11px] font-semibold uppercase tracking-wide text-ink/80">Add task</span>
                   <button
                     type="button"
                     onClick={() => setIsSparkleMode(!isSparkleMode)}
                     aria-pressed={isSparkleMode}
                     aria-label="Toggle AI brain-dump mode"
-                    className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-pink-300 ${
-                      isSparkleMode ? "bg-pink-400 text-white" : "bg-pink-50 text-pink-500 hover:bg-pink-100"
+                    className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-folder-pinkDeep/40 ${
+                      isSparkleMode ? "bg-folder-pinkDeep text-white" : "bg-folder-pink/25 text-ink hover:bg-folder-pink/40"
                     }`}
                   >
                     <Sparkles size={12} /> AI Mode
@@ -407,7 +407,7 @@ export default function Dashboard({ onBackToLanding }: DashboardProps) {
                       onChange={(e) => setInputVal(e.target.value)}
                       placeholder="Dump chaotic thoughts here..."
                       aria-label="Brain dump input"
-                      className="w-full p-3.5 pr-12 rounded-xl border-2 border-pink-100 focus:border-pink-400 focus:outline-none min-h-[100px] text-sm resize-none text-slate-700 bg-pink-50/30 transition-all duration-200"
+                      className="w-full p-3.5 pr-12 rounded-xl border-2 border-folder-pink/50 focus:border-folder-pinkDeep focus:outline-none min-h-[100px] text-sm resize-none text-ink bg-folder-pink/10 transition-all duration-200"
                     />
                   ) : (
                     <input
@@ -416,21 +416,21 @@ export default function Dashboard({ onBackToLanding }: DashboardProps) {
                       onChange={(e) => setInputVal(e.target.value)}
                       placeholder="Quick task title..."
                       aria-label="Quick task title"
-                      className="w-full p-3.5 pr-12 rounded-xl border-2 border-slate-100 focus:border-slate-300 focus:outline-none text-sm text-slate-700 bg-slate-50/50 transition-all duration-200"
+                      className="w-full p-3.5 pr-12 rounded-xl border-2 border-ink/10 focus:border-ink/30 focus:outline-none text-sm text-ink bg-ink/5 transition-all duration-200"
                     />
                   )}
                   <button
                     type="submit"
                     disabled={isLoadingAi || !inputVal.trim()}
                     aria-label={isSparkleMode ? "Parse brain dump into tasks" : "Add task"}
-                    className="absolute right-2 bottom-2 p-2 bg-slate-900 text-white rounded-lg transition-transform hover:scale-105 active:scale-95 disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400"
+                    className="absolute right-2 bottom-2 p-2 bg-ink text-white rounded-lg transition-transform hover:scale-105 active:scale-95 disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/40"
                   >
-                    {isLoadingAi ? <Sparkles size={14} className="animate-spin text-pink-400" /> : <Plus size={14} />}
+                    {isLoadingAi ? <Sparkles size={14} className="animate-spin text-folder-pinkDeep" /> : <Plus size={14} />}
                   </button>
                 </div>
 
                 <p
-                  className={`text-xs text-pink-400 font-medium px-1 min-h-[1rem] transition-opacity duration-300 ${
+                  className={`text-xs text-folder-pinkDeep font-medium px-1 min-h-[1rem] transition-opacity duration-300 ${
                     isLoadingAi ? "opacity-100" : "opacity-0"
                   }`}
                   aria-live="polite"
@@ -441,20 +441,20 @@ export default function Dashboard({ onBackToLanding }: DashboardProps) {
             </div>
 
             {tasks.length > 0 && (
-              <div className="bg-white rounded-3xl p-5 shadow-[0_6px_24px_rgba(233,169,194,0.18)] border-2 border-dashed border-pink-200 flex flex-col gap-3">
+              <div className="bg-white rounded-3xl p-5 shadow-[0_6px_24px_rgba(233,169,194,0.18)] border-2 border-dashed border-folder-pink/60 flex flex-col gap-3">
                 <div className="flex items-center justify-between">
-                  <span className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
-                    <Flame size={12} className="text-pink-400" /> Today's progress
+                  <span className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-ink/80">
+                    <Flame size={12} className="text-folder-pinkDeep" /> Today's progress
                   </span>
-                  <span className="text-2xl font-bold text-pink-500 leading-none">{progressPct}%</span>
+                  <span className="text-2xl font-bold text-folder-pinkDeep leading-none">{progressPct}%</span>
                 </div>
-                <div className="h-3 w-full bg-pink-50 rounded-full overflow-hidden">
+                <div className="h-3 w-full bg-folder-pink/20 rounded-full overflow-hidden">
                   <div
-                    className="h-full bg-gradient-to-r from-pink-300 to-pink-500 rounded-full transition-all duration-500"
+                    className="h-full bg-gradient-to-r from-folder-pink to-folder-pinkDeep rounded-full transition-all duration-500"
                     style={{ width: `${progressPct}%` }}
                   />
                 </div>
-                <p className="text-xs text-slate-500">
+                <p className="text-xs text-ink/80">
                   {completedCount === 0
                     ? "Finish your first task to get the ball rolling."
                     : `${completedCount} of ${tasks.length} done — keep going!`}
@@ -466,23 +466,23 @@ export default function Dashboard({ onBackToLanding }: DashboardProps) {
 
         {/* RIGHT COLUMN: Workspace */}
         <main className="flex-1 flex flex-col gap-4 lg:gap-6 min-w-0">
-          <div className="relative bg-white rounded-3xl p-5 shadow-[0_6px_24px_rgba(233,169,194,0.18)] border-2 border-dashed border-pink-200 flex flex-col gap-4">
-            <div className="absolute -top-2.5 left-8 w-16 h-3 bg-[#BFE3F2] rounded-t-lg" aria-hidden="true" />
+          <div className="relative bg-white rounded-3xl p-5 shadow-[0_6px_24px_rgba(233,169,194,0.18)] border-2 border-dashed border-folder-pink/60 flex flex-col gap-4">
+            <div className="absolute -top-2.5 left-8 w-16 h-3 bg-stripe-blue rounded-t-lg" aria-hidden="true" />
             <div className="flex items-center justify-between flex-wrap gap-3">
-              <h1 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
+              <h1 className="text-2xl font-bold text-ink flex items-center gap-2">
                 {activeView === "Categories" && (
                   <>
-                    <Folder className="text-pink-400" /> Task Folders
+                    <Folder className="text-folder-pinkDeep" /> Task Folders
                   </>
                 )}
                 {activeView === "Timeline" && (
                   <>
-                    <Calendar className="text-sky-400" /> Schedule
+                    <Calendar className="text-[#2E6A82]" /> Schedule
                   </>
                 )}
                 {activeView === "Completed" && (
                   <>
-                    <CheckSquare className="text-emerald-400" /> Archive
+                    <CheckSquare className="text-button-greenDark" /> Archive
                   </>
                 )}
               </h1>
@@ -491,7 +491,7 @@ export default function Dashboard({ onBackToLanding }: DashboardProps) {
                 {activeView === "Timeline" && (
                   <button
                     onClick={() => setIsReceiptModalOpen(true)}
-                    className="flex items-center gap-1.5 px-3.5 py-1.5 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-xl text-xs font-semibold transition-colors shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300"
+                    className="flex items-center gap-1.5 px-3.5 py-1.5 bg-white border border-ink/15 hover:bg-ink/5 text-ink rounded-xl text-xs font-semibold transition-colors shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/30"
                   >
                     <Receipt size={14} /> Print Agenda
                   </button>
@@ -502,7 +502,7 @@ export default function Dashboard({ onBackToLanding }: DashboardProps) {
                     disabled={isOptimizing || pendingTasks.length <= 1}
                     aria-label="Optimize task flow order"
                     title={pendingTasks.length <= 1 ? "Add a few more tasks to optimize flow" : undefined}
-                    className="flex items-center gap-1.5 px-3.5 py-1.5 bg-pink-50 hover:bg-pink-100 text-pink-600 rounded-xl text-xs font-semibold transition-colors disabled:opacity-40 disabled:hover:bg-pink-50 border border-pink-100 shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-pink-300"
+                    className="flex items-center gap-1.5 px-3.5 py-1.5 bg-folder-pink/20 hover:bg-folder-pink/35 text-ink rounded-xl text-xs font-semibold transition-colors disabled:opacity-40 disabled:hover:bg-folder-pink/20 border border-folder-pink/50 shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-folder-pinkDeep/40"
                   >
                     <Sparkles size={14} className={isOptimizing ? "animate-spin" : ""} />
                     {isOptimizing ? "Optimizing Flow..." : "Optimize Flow"}
@@ -525,8 +525,8 @@ export default function Dashboard({ onBackToLanding }: DashboardProps) {
                       role="tab"
                       aria-selected={activeCategory === cat}
                       onClick={() => setActiveCategory(cat as string)}
-                      className={`whitespace-nowrap px-4 py-1.5 rounded-full text-xs font-semibold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 ${
-                        activeCategory === cat ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-500 hover:bg-slate-200"
+                      className={`whitespace-nowrap px-4 py-1.5 rounded-full text-xs font-semibold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/30 ${
+                        activeCategory === cat ? "bg-ink text-white" : "bg-ink/8 text-ink/80 hover:bg-ink/15"
                       }`}
                     >
                       {cat as string} {count > 0 && <span className="opacity-60">({count})</span>}
@@ -548,8 +548,8 @@ export default function Dashboard({ onBackToLanding }: DashboardProps) {
                     role="tab"
                     aria-selected={activeTimeline === time}
                     onClick={() => setActiveTimeline(time)}
-                    className={`whitespace-nowrap px-4 py-1.5 rounded-full text-xs font-semibold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 ${
-                      activeTimeline === time ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-500 hover:bg-slate-200"
+                    className={`whitespace-nowrap px-4 py-1.5 rounded-full text-xs font-semibold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/30 ${
+                      activeTimeline === time ? "bg-ink text-white" : "bg-ink/8 text-ink/80 hover:bg-ink/15"
                     }`}
                   >
                     {time}
@@ -559,15 +559,15 @@ export default function Dashboard({ onBackToLanding }: DashboardProps) {
             )}
 
             {activeView === "Completed" && (
-              <div className="flex items-center justify-between bg-slate-50 p-3 rounded-2xl border border-slate-100">
-                <span className="text-sm font-medium text-slate-500">
+              <div className="flex items-center justify-between bg-ink/5 p-3 rounded-2xl border border-ink/10">
+                <span className="text-sm font-medium text-ink/80">
                   You've finished {displayedTasks.length} task{displayedTasks.length === 1 ? "" : "s"}!
                 </span>
                 <div className="flex items-center gap-2">
                   <button
                     onClick={() => setIsReceiptModalOpen(true)}
                     disabled={displayedTasks.length === 0}
-                    className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-lg text-xs font-semibold transition-colors disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300"
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-ink/15 text-ink hover:bg-ink/5 rounded-lg text-xs font-semibold transition-colors disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/30"
                   >
                     <Receipt size={14} /> Export Receipt
                   </button>
@@ -575,10 +575,10 @@ export default function Dashboard({ onBackToLanding }: DashboardProps) {
                     onClick={handleClearCompleted}
                     disabled={displayedTasks.length === 0}
                     aria-label={confirmingClear ? "Confirm clear all completed tasks" : "Clear all completed tasks"}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-300 ${
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger/40 ${
                       confirmingClear
-                        ? "bg-rose-500 text-white border border-rose-500"
-                        : "bg-white border border-rose-200 text-rose-500 hover:bg-rose-50"
+                        ? "bg-danger text-white border border-danger"
+                        : "bg-white border border-danger/30 text-danger hover:bg-danger/10"
                     }`}
                   >
                     <Trash2 size={14} /> {confirmingClear ? "Confirm Clear?" : "Clear All"}
@@ -590,10 +590,10 @@ export default function Dashboard({ onBackToLanding }: DashboardProps) {
 
           <div className="flex flex-col gap-3 pb-20">
             {displayedTasks.length === 0 ? (
-              <div className="flex flex-col items-center justify-center p-12 text-center bg-white/50 backdrop-blur-sm rounded-3xl border border-dashed border-pink-200">
-                <EmptyIcon size={32} className="text-pink-200 mb-3" />
-                <p className="text-sm font-medium text-slate-500">{emptyStateCopy.title}</p>
-                <p className="text-xs text-slate-400 mt-1">{emptyStateCopy.sub}</p>
+              <div className="flex flex-col items-center justify-center p-12 text-center bg-white/50 backdrop-blur-sm rounded-3xl border border-dashed border-folder-pink/60">
+                <EmptyIcon size={32} className="text-folder-pink mb-3" />
+                <p className="text-sm font-medium text-ink">{emptyStateCopy.title}</p>
+                <p className="text-xs text-ink/80 mt-1">{emptyStateCopy.sub}</p>
               </div>
             ) : (
               displayedTasks.map((task) => (

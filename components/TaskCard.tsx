@@ -83,16 +83,16 @@ export default function TaskCard({ task, onStartFocus }: TaskCardProps) {
     <div
       className={`group relative rounded-2xl bg-white shadow-[0_4px_20px_rgba(0,0,0,0.03)] border-2 border-dashed p-4 transition-all ${
         task.completed
-          ? "border-pink-50 bg-pink-50/30 opacity-70"
+          ? "border-folder-pink/30 bg-folder-pink/10 opacity-70"
           : isUrgent
-          ? "border-rose-200 hover:border-rose-300"
-          : "border-pink-100 hover:border-pink-300"
+          ? "border-danger/30 hover:border-danger/50"
+          : "border-folder-pink/40 hover:border-folder-pink/70"
       }`}
     >
       {isUrgent && (
         <div
           aria-hidden="true"
-          className="absolute -top-2.5 left-6 h-4 w-11 bg-amber-200/80 rounded-[2px] -rotate-6 pointer-events-none"
+          className="absolute -top-2.5 left-6 h-4 w-11 bg-star/80 rounded-[2px] -rotate-6 pointer-events-none"
         />
       )}
 
@@ -101,35 +101,35 @@ export default function TaskCard({ task, onStartFocus }: TaskCardProps) {
         <button
           onClick={() => toggleTask(task.id)}
           className={`mt-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 transition-colors ${
-            task.completed ? "border-emerald-400 bg-emerald-400 text-white" : "border-pink-200 text-transparent hover:border-emerald-300"
+            task.completed ? "border-button-greenDeep bg-button-greenDeep text-white" : "border-folder-pink/50 text-transparent hover:border-button-greenDeep/60"
           }`}
         >
           <Check size={12} strokeWidth={3} />
         </button>
 
         <div className="flex-1 min-w-0 space-y-2">
-          <span className={`block text-sm sm:text-base font-medium ${task.completed ? "text-gray-400 line-through" : "text-gray-700"}`}>
+          <span className={`block text-sm sm:text-base font-medium ${task.completed ? "text-ink/50 line-through" : "text-ink"}`}>
             {task.title}
           </span>
 
           <div className="flex flex-wrap items-center gap-2 pt-0.5">
             {isEditingCategory ? (
               <form onSubmit={handleCategorySubmit} className="inline-flex">
-                <input 
+                <input
                   autoFocus
                   type="text"
                   value={categoryInput}
                   onChange={(e) => setCategoryInput(e.target.value)}
                   onBlur={handleCategorySubmit}
-                  className="rounded-full bg-slate-100 border border-slate-200 px-2 py-0.5 text-[10px] text-slate-700 outline-none focus:border-slate-400 w-24"
+                  className="rounded-full bg-ink/8 border border-ink/15 px-2 py-0.5 text-[10px] text-ink outline-none focus:border-ink/40 w-24"
                   placeholder="New tab..."
                 />
               </form>
             ) : (
-              <button 
+              <button
                 onClick={() => !task.completed && setIsEditingCategory(true)}
                 disabled={task.completed}
-                className="inline-flex items-center gap-1 rounded-full bg-slate-50 px-2 py-0.5 text-[10px] font-medium text-slate-500 border border-slate-200 hover:bg-slate-100 transition-colors disabled:opacity-50"
+                className="inline-flex items-center gap-1 rounded-full bg-ink/5 px-2 py-0.5 text-[10px] font-medium text-ink/80 border border-ink/15 hover:bg-ink/10 transition-colors disabled:opacity-50"
                 title="Move to another folder"
               >
                 <Folder size={10} /> {task.category || "Inbox"}
@@ -137,23 +137,23 @@ export default function TaskCard({ task, onStartFocus }: TaskCardProps) {
             )}
 
             {isUrgent && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-rose-50 px-2 py-0.5 text-[10px] font-semibold text-rose-600 border border-rose-100">
-                <div className="h-1.5 w-1.5 rounded-full bg-rose-400" /> Urgent
+              <span className="inline-flex items-center gap-1 rounded-full bg-danger/10 px-2 py-0.5 text-[10px] font-semibold text-ink border border-danger/30">
+                <div className="h-1.5 w-1.5 rounded-full bg-danger" /> Urgent
               </span>
             )}
-            
+
             {task.energy_level === "high_focus" && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-600 border border-amber-100">
+              <span className="inline-flex items-center gap-1 rounded-full bg-star/30 px-2 py-0.5 text-[10px] font-semibold text-ink border border-star/60">
                 <Zap size={10} /> Deep Focus
               </span>
             )}
 
-            <span className="inline-flex items-center gap-1 rounded-full bg-pink-50/50 px-2 py-0.5 text-[10px] font-medium text-pink-500 border border-pink-100">
+            <span className="inline-flex items-center gap-1 rounded-full bg-folder-pink/20 px-2 py-0.5 text-[10px] font-medium text-ink border border-folder-pink/40">
               <Clock size={10} /> {task.estimated_minutes}m
             </span>
 
             {task.due_hint && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-sky-50 px-2 py-0.5 text-[10px] font-medium text-sky-600 border border-sky-100">
+              <span className="inline-flex items-center gap-1 rounded-full bg-stripe-blue/25 px-2 py-0.5 text-[10px] font-medium text-ink border border-stripe-blue/50">
                 <Calendar size={10} /> {task.due_hint}
               </span>
             )}
@@ -161,18 +161,18 @@ export default function TaskCard({ task, onStartFocus }: TaskCardProps) {
 
           {/* Subtasks Section */}
           {totalSubtasks > 0 && (
-            <div className="pt-3 mt-2 border-t border-pink-50">
+            <div className="pt-3 mt-2 border-t border-folder-pink/25">
               <div className="flex items-center justify-between">
                 <button
                   onClick={() => setIsExpanded(!isExpanded)}
-                  className="flex items-center gap-1 text-[11px] font-semibold text-pink-400 hover:text-pink-600 transition-colors"
+                  className="flex items-center gap-1 text-[11px] font-semibold text-folder-pinkDeep hover:text-ink transition-colors"
                 >
                   {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
                   Steps ({completedSubtasks}/{totalSubtasks})
                 </button>
                 <div className="flex items-center gap-2">
-                  <div className="w-16 h-1.5 bg-pink-50 rounded-full overflow-hidden">
-                    <div className="h-full bg-pink-400 transition-all duration-300" style={{ width: `${progressPercent}%` }} />
+                  <div className="w-16 h-1.5 bg-folder-pink/20 rounded-full overflow-hidden">
+                    <div className="h-full bg-folder-pinkDeep transition-all duration-300" style={{ width: `${progressPercent}%` }} />
                   </div>
                 </div>
               </div>
@@ -180,21 +180,21 @@ export default function TaskCard({ task, onStartFocus }: TaskCardProps) {
               {isExpanded && (
                 <div className="mt-2 space-y-1.5 pl-1">
                   {task.subtasks.map((sub) => (
-                    <div key={sub.id} className="flex items-center gap-2 p-1.5 hover:bg-pink-50/50 rounded-lg transition-colors">
+                    <div key={sub.id} className="flex items-center gap-2 p-1.5 hover:bg-folder-pink/10 rounded-lg transition-colors">
                       <button
                         onClick={() => toggleSubtask(task.id, sub.id)}
                         className={`flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded border ${
-                          sub.completed ? "border-emerald-400 bg-emerald-400 text-white" : "border-pink-200 bg-white"
+                          sub.completed ? "border-button-greenDeep bg-button-greenDeep text-white" : "border-folder-pink/50 bg-white"
                         }`}
                       >
                         {sub.completed && <Check size={10} strokeWidth={3} />}
                       </button>
-                      <span className={`text-xs ${sub.completed ? "text-gray-400 line-through" : "text-gray-600"}`}>
+                      <span className={`text-xs ${sub.completed ? "text-ink/50 line-through" : "text-ink/80"}`}>
                         {sub.title}
                       </span>
                     </div>
                   ))}
-                  
+
                   {isAddingSubtask ? (
                     <form onSubmit={handleManualSubtaskSubmit} className="flex items-center gap-2 mt-1">
                       <input
@@ -203,12 +203,12 @@ export default function TaskCard({ task, onStartFocus }: TaskCardProps) {
                         value={newSubtaskTitle}
                         onChange={(e) => setNewSubtaskTitle(e.target.value)}
                         placeholder="New step..."
-                        className="flex-1 rounded-lg border border-pink-200 bg-white px-2 py-1 text-xs outline-none focus:border-pink-400"
+                        className="flex-1 rounded-lg border border-folder-pink/50 bg-white px-2 py-1 text-xs outline-none focus:border-folder-pinkDeep"
                       />
-                      <button type="submit" className="text-xs font-semibold text-pink-500 hover:text-pink-700">Add</button>
+                      <button type="submit" className="text-xs font-semibold text-folder-pinkDeep hover:text-ink">Add</button>
                     </form>
                   ) : (
-                    <button onClick={() => setIsAddingSubtask(true)} className="flex items-center gap-1 text-[11px] text-gray-400 hover:text-pink-500 mt-1 pl-1">
+                    <button onClick={() => setIsAddingSubtask(true)} className="flex items-center gap-1 text-[11px] text-ink/60 hover:text-folder-pinkDeep mt-1 pl-1">
                       <Plus size={12} /> Add step
                     </button>
                   )}
@@ -232,7 +232,7 @@ export default function TaskCard({ task, onStartFocus }: TaskCardProps) {
           {!task.completed && (
             <button
               onClick={handleBreakdown}
-              className="p-2 text-pink-400 hover:bg-pink-50 rounded-xl transition-colors"
+              className="p-2 text-folder-pinkDeep hover:bg-folder-pink/15 rounded-xl transition-colors"
               title="AI Breakdown"
             >
               <Sparkles size={14} className={task.isBreakingDown ? "animate-spin" : ""} />
@@ -240,7 +240,7 @@ export default function TaskCard({ task, onStartFocus }: TaskCardProps) {
           )}
           <button
             onClick={() => deleteTask(task.id)}
-            className="p-2 text-gray-300 hover:bg-rose-50 hover:text-rose-400 rounded-xl transition-colors"
+            className="p-2 text-ink/40 hover:bg-danger/10 hover:text-danger rounded-xl transition-colors"
           >
             <Trash2 size={14} />
           </button>
