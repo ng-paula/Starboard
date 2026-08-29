@@ -43,8 +43,11 @@ export default function Landing({ onStartListing }: LandingProps) {
           className="absolute -top-[10%] left-[2%] w-[24%] max-w-[13rem] h-auto -rotate-12 drop-shadow-md z-20 hover:scale-110 hover:-rotate-[25deg] transition-all duration-300"
         />
 
-        {/* Bottom-Right Tape & Green Button (decorative only) */}
-        <div className="absolute -bottom-[4%] right-[2%] w-[26%] max-w-48 z-30 group transition-transform duration-300 hover:scale-110 hover:rotate-3">
+        {/* Bottom-Right Tape & Green Button (decorative only) — kept below
+            "Folder Interior Content" (z-20) so its bounding box, including the
+            empty space around the tape/button art, never intercepts clicks
+            meant for the Start Listing button */}
+        <div className="absolute -bottom-[4%] right-[2%] w-[20%] max-w-36 z-10 group transition-transform duration-300 hover:scale-110 hover:rotate-3">
 
           {/* Washi Tape */}
           <div
@@ -56,14 +59,16 @@ export default function Landing({ onStartListing }: LandingProps) {
             }}
           />
 
-          {/* Green Sewing Button */}
+          {/* Green Sewing Button — desaturated a touch so the fully-saturated
+              green (which appears nowhere else on this page) doesn't pop
+              out of the soft pastel palette */}
           <Image
             src="/sb_green-button.png"
             alt=""
             width={1080}
             height={1350}
-            sizes="12rem"
-            className="relative w-full h-auto drop-shadow-xl ml-[6%] transition-transform duration-300 group-hover:rotate-12"
+            sizes="9rem"
+            className="relative w-full h-auto drop-shadow-md ml-[6%] saturate-[0.65] brightness-105 transition-transform duration-300 group-hover:rotate-12"
           />
         </div>
 
@@ -86,19 +91,16 @@ export default function Landing({ onStartListing }: LandingProps) {
             Let's untangle those to-dos.
           </p>
 
-          {/* Start Listing CTA — real text, not a baked-in image, so it scales, translates, and stays crisp */}
+          {/* Start Listing CTA — real text, not a baked-in image, so it scales,
+              translates, and stays crisp. Colors and font are pulled straight
+              from the rest of the app (stripe blue + folder pink border is the
+              same pairing used on the dashboard header; Chewy is the wordmark
+              font) instead of inventing a one-off purple/yellow combo. */}
           <button
             onClick={onStartListing}
-            className="relative z-30 flex items-center justify-center rounded-full border-[3px] border-[#A569BD] bg-stripe-blue px-8 py-3 xs:px-10 xs:py-3.5 sm:px-14 sm:py-4 shadow-sm transition-transform duration-150 hover:scale-105 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#A569BD]/50 focus-visible:ring-offset-2"
+            className="relative z-30 flex items-center justify-center rounded-full border-2 border-folder-pinkDeep bg-stripe-blue px-5 py-2 xs:px-6 xs:py-2.5 sm:px-8 sm:py-3 shadow-sm transition-transform duration-150 hover:scale-105 hover:bg-white active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-folder-pinkDeep/50 focus-visible:ring-offset-2"
           >
-            <span
-              className="font-logo text-base xs:text-lg sm:text-2xl md:text-3xl leading-none"
-              style={{
-                color: "#F5EFA8",
-                WebkitTextStroke: "1.5px #8a8a3c",
-                textShadow: "1px 1px 0 #8a8a3c",
-              }}
-            >
+            <span className="font-logo text-ink text-sm xs:text-base sm:text-lg md:text-xl leading-none">
               Start Listing
             </span>
           </button>

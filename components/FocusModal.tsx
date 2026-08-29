@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef, useId } from "react";
 import { X, Play, Pause, RotateCcw, Sparkles, CheckCircle2, Check, Zap, Volume2, VolumeX } from "lucide-react";
 import type { Task } from "@/lib/types";
 
@@ -26,6 +26,45 @@ export default function FocusModal({
   const [soundEnabled, setSoundEnabled] = useState<boolean>(true);
   const [isStuckLoading, setIsStuckLoading] = useState<boolean>(false);
   const [stuckTip, setStuckTip] = useState<string | null>(null);
+
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const titleId = useId();
+
+  // Escape-to-close, a basic focus trap, and focus restore on close —
+  // brings this modal up to the same a11y baseline as ReceiptExport,
+  // which already had Escape/backdrop-click/role="dialog".
+  useEffect(() => {
+    const previouslyFocused = document.activeElement as HTMLElement | null;
+    dialogRef.current?.focus();
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        onClose();
+        return;
+      }
+      if (e.key === "Tab" && dialogRef.current) {
+        const focusable = dialogRef.current.querySelectorAll<HTMLElement>(
+          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+        );
+        if (focusable.length === 0) return;
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+        if (e.shiftKey && document.activeElement === first) {
+          e.preventDefault();
+          last.focus();
+        } else if (!e.shiftKey && document.activeElement === last) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+      previouslyFocused?.focus();
+    };
+  }, [onClose]);
 
   // Timer countdown
   useEffect(() => {
@@ -63,13 +102,19 @@ export default function FocusModal({
   const minutes = Math.floor(timeLeft / 60);
   const seconds = timeLeft % 60;
   const progress = totalSeconds > 0 ? (totalSeconds - timeLeft) / totalSeconds : 0;
-  const circumference = 2 * Math.PI * 110;
-  const strokeDashoffset = circumference - progress * circumference;
 
   const handleSetPreset = (mins: number) => {
     setIsRunning(false);
     setTotalSeconds(mins * 60);
     setTimeLeft(mins * 60);
+  };
+
+  // Extending the timer must grow totalSeconds too, or progress goes
+  // negative once timeLeft exceeds the original total and the ring
+  // renders past a full circle.
+  const handleAddFiveMinutes = () => {
+    setTotalSeconds((prev) => prev + 300);
+    setTimeLeft((prev) => prev + 300);
   };
 
   const handleFeelingStuck = async () => {
@@ -99,8 +144,20 @@ export default function FocusModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-[#e4f0fa]/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
-      <div className="w-full max-w-xl bg-white/95 border border-folder-pink/40 rounded-[2rem] shadow-[0_10px_40px_rgba(233,169,194,0.25)] p-6 sm:p-8 space-y-6 relative overflow-hidden">
+    <div
+      className="fixed inset-0 z-50 bg-[#e4f0fa]/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        tabIndex={-1}
+        className="w-full max-w-xl bg-white/95 border border-folder-pink/40 rounded-[2rem] shadow-[0_10px_40px_rgba(233,169,194,0.25)] p-6 sm:p-8 space-y-6 relative overflow-hidden focus:outline-none"
+      >
 
         {/* Top Header */}
         <div className="flex items-center justify-between pb-3 border-b border-folder-pink/25">
@@ -123,7 +180,7 @@ export default function FocusModal({
 
         {/* Task Title & AI Reason */}
         <div className="text-center space-y-2">
-          <h2 className="text-lg sm:text-xl font-bold text-ink leading-snug">{task.title}</h2>
+          <h2 id={titleId} className="text-lg sm:text-xl font-bold text-ink leading-snug">{task.title}</h2>
           {reason && (
             <p className="text-[11px] font-semibold text-ink bg-button-green/20 border border-button-green/40 inline-block px-3 py-1 rounded-full animate-in slide-in-from-bottom-2">
               ✨ {reason}
@@ -166,7 +223,7 @@ export default function FocusModal({
               {isRunning ? <><Pause size={16} className="fill-current" /> Pause</> : <><Play size={16} className="fill-current" /> Start Focus</>}
             </button>
 
-            <button onClick={() => setTimeLeft((prev) => prev + 300)} className="px-3 py-2.5 rounded-2xl bg-ink/5 hover:bg-ink/10 text-ink/80 text-xs font-semibold transition">
+            <button onClick={handleAddFiveMinutes} className="px-3 py-2.5 rounded-2xl bg-ink/5 hover:bg-ink/10 text-ink/80 text-xs font-semibold transition">
               +5m
             </button>
           </div>

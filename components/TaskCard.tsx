@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Check, Sparkles, Play, Trash2, Clock, Zap, ChevronDown, ChevronUp, Plus, Calendar, Folder } from "lucide-react";
 import type { Task } from "@/lib/types";
 import { useTaskStore } from "@/store/useTaskStore";
@@ -28,6 +28,25 @@ export default function TaskCard({ task, onStartFocus }: TaskCardProps) {
   
   const [isEditingCategory, setIsEditingCategory] = useState(false);
   const [categoryInput, setCategoryInput] = useState(task.category || "Inbox");
+
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const confirmDeleteTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (confirmDeleteTimeoutRef.current) clearTimeout(confirmDeleteTimeoutRef.current);
+    };
+  }, []);
+
+  const handleDeleteClick = () => {
+    if (!confirmingDelete) {
+      setConfirmingDelete(true);
+      confirmDeleteTimeoutRef.current = setTimeout(() => setConfirmingDelete(false), 3000);
+      return;
+    }
+    if (confirmDeleteTimeoutRef.current) clearTimeout(confirmDeleteTimeoutRef.current);
+    deleteTask(task.id);
+  };
 
   const completedSubtasks = task.subtasks?.filter((s) => s.completed).length || 0;
   const totalSubtasks = task.subtasks?.length || 0;
@@ -219,7 +238,11 @@ export default function TaskCard({ task, onStartFocus }: TaskCardProps) {
         </div>
 
         {/* Action Icons */}
-        <div className="flex shrink-0 flex-col sm:flex-row items-center gap-1 opacity-100 sm:opacity-0 group-hover:opacity-100 transition-opacity">
+        <div
+          className={`flex shrink-0 flex-col sm:flex-row items-center gap-1 transition-opacity ${
+            confirmingDelete ? "opacity-100" : "opacity-100 sm:opacity-0 group-hover:opacity-100"
+          }`}
+        >
           {!task.completed && (
             <button
               onClick={() => onStartFocus(task)}
@@ -239,10 +262,14 @@ export default function TaskCard({ task, onStartFocus }: TaskCardProps) {
             </button>
           )}
           <button
-            onClick={() => deleteTask(task.id)}
-            className="p-2 text-ink/40 hover:bg-danger/10 hover:text-danger rounded-xl transition-colors"
+            onClick={handleDeleteClick}
+            aria-label={confirmingDelete ? `Confirm delete "${task.title}"` : `Delete "${task.title}"`}
+            className={`flex items-center gap-1 rounded-xl p-2 transition-colors ${
+              confirmingDelete ? "bg-danger text-white" : "text-ink/40 hover:bg-danger/10 hover:text-danger"
+            }`}
           >
             <Trash2 size={14} />
+            {confirmingDelete && <span className="text-[11px] font-semibold pr-0.5">Confirm?</span>}
           </button>
         </div>
       </div>
