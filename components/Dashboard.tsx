@@ -242,16 +242,22 @@ export default function Dashboard({ onBackToLanding }: DashboardProps) {
 
     setIsOptimizing(true);
     try {
+      // Only pending tasks need reordering - completed ones have nothing
+      // left to sequence and would just be an unnecessary chunk of the
+      // request payload.
       const res = await fetch("/api/optimize", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tasks }),
+        body: JSON.stringify({ tasks: pendingTasks }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
 
       if (data.tasks) {
-        reorderTasks(data.tasks);
+        // reorderTasks fully replaces the store's task array, so the
+        // completed tasks we deliberately left out of the request have
+        // to be reattached here or they'd vanish.
+        reorderTasks([...data.tasks, ...tasks.filter((t) => t.completed)]);
         pushToast("Flow optimized.", "success");
       }
     } catch (err: any) {
