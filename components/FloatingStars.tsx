@@ -1,6 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
+import Image from "next/image";
 import { useEffect, useState } from "react";
 
 interface StarItem {
@@ -16,8 +17,12 @@ export default function FloatingStars() {
   const [stars, setStars] = useState<StarItem[]>([]);
 
   useEffect(() => {
-    // 160 stars on desktop, 80 on mobile
-    const count = typeof window !== "undefined" && window.innerWidth < 640 ? 80 : 160;
+    // sb_star.png now carries a real alpha channel (see git history —
+    // it used to be flattened onto black and relied on mix-blend-screen,
+    // which made every star invisible on the white landing-page stripes).
+    // 60 stars on desktop, 30 on mobile keeps the same scattered feel
+    // without mounting 160 animated layers.
+    const count = typeof window !== "undefined" && window.innerWidth < 640 ? 30 : 60;
     const generated = Array.from({ length: count }).map((_, i) => ({
       id: i,
       x: Math.random() * 98,
@@ -30,7 +35,7 @@ export default function FloatingStars() {
   }, []);
 
   return (
-    <div className="fixed inset-0 z-0 overflow-hidden pointer-events-none">
+    <div className="fixed inset-0 z-0 overflow-hidden pointer-events-none" aria-hidden="true">
       {stars.map((star) => (
         <motion.div
           key={star.id}
@@ -53,10 +58,12 @@ export default function FloatingStars() {
             ease: "easeInOut",
           }}
         >
-          <img
+          <Image
             src="/sb_star.png"
-            alt="star"
-            className="w-full h-full object-contain mix-blend-screen pointer-events-none select-none"
+            alt=""
+            fill
+            sizes="32px"
+            className="object-contain pointer-events-none select-none"
           />
         </motion.div>
       ))}

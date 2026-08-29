@@ -81,7 +81,7 @@ export default function TaskCard({ task, onStartFocus }: TaskCardProps) {
 
   return (
     <div
-      className={`group relative rounded-2xl bg-white shadow-[0_4px_20px_rgba(0,0,0,0.03)] border-2 border-dashed p-4 transition-all ${
+      className={`group relative rounded-2xl bg-white shadow-[0_4px_20px_rgba(0,0,0,0.03)] border-2 p-4 transition-all ${
         task.completed
           ? "border-folder-pink/30 bg-folder-pink/10 opacity-70"
           : isUrgent

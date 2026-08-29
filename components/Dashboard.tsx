@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useMemo, useCallback, useEffect, useRef } from "react";
+import Image from "next/image";
 import {
   Sparkles,
   Plus,
@@ -293,7 +294,7 @@ export default function Dashboard({ onBackToLanding }: DashboardProps) {
             aria-label="Back to landing page"
             className="flex items-center shrink-0 -ml-1 rounded-xl transition-transform hover:scale-105 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-folder-pinkDeep/40"
           >
-            <img src="/sb_logo.png" alt="Starboard" className="h-14 w-auto" />
+            <Image src="/sb_logo.png" alt="Starboard" width={1640} height={500} priority sizes="140px" className="h-14 w-auto" />
           </button>
 
           <nav
@@ -383,7 +384,7 @@ export default function Dashboard({ onBackToLanding }: DashboardProps) {
         {/* LEFT COLUMN: Add task + progress */}
         <aside className="w-full lg:w-80 flex flex-col gap-6 shrink-0">
           <div className="flex flex-col gap-5 sticky top-24">
-            <div className="bg-white rounded-3xl p-5 shadow-[0_6px_24px_rgba(233,169,194,0.18)] border-2 border-dashed border-folder-pink/60 flex flex-col gap-2">
+            <div className="bg-white rounded-3xl p-5 shadow-[0_6px_24px_rgba(233,169,194,0.18)] border-2 border-folder-pink/50 flex flex-col gap-2">
               <form onSubmit={handleAddTask} className="flex flex-col gap-2">
                 <div className="flex items-center justify-between px-1">
                   <span className="text-[11px] font-semibold uppercase tracking-wide text-ink/80">Add task</span>
@@ -441,7 +442,7 @@ export default function Dashboard({ onBackToLanding }: DashboardProps) {
             </div>
 
             {tasks.length > 0 && (
-              <div className="bg-white rounded-3xl p-5 shadow-[0_6px_24px_rgba(233,169,194,0.18)] border-2 border-dashed border-folder-pink/60 flex flex-col gap-3">
+              <div className="bg-white rounded-3xl p-5 shadow-[0_6px_24px_rgba(233,169,194,0.18)] border-2 border-folder-pink/50 flex flex-col gap-3">
                 <div className="flex items-center justify-between">
                   <span className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-ink/80">
                     <Flame size={12} className="text-folder-pinkDeep" /> Today's progress
@@ -466,7 +467,7 @@ export default function Dashboard({ onBackToLanding }: DashboardProps) {
 
         {/* RIGHT COLUMN: Workspace */}
         <main className="flex-1 flex flex-col gap-4 lg:gap-6 min-w-0">
-          <div className="relative bg-white rounded-3xl p-5 shadow-[0_6px_24px_rgba(233,169,194,0.18)] border-2 border-dashed border-folder-pink/60 flex flex-col gap-4">
+          <div className="relative bg-white rounded-3xl p-5 shadow-[0_6px_24px_rgba(233,169,194,0.18)] border-2 border-folder-pink/50 flex flex-col gap-4">
             <div className="absolute -top-2.5 left-8 w-16 h-3 bg-stripe-blue rounded-t-lg" aria-hidden="true" />
             <div className="flex items-center justify-between flex-wrap gap-3">
               <h1 className="text-2xl font-bold text-ink flex items-center gap-2">
