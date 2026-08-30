@@ -4,7 +4,7 @@ import React, { useState, useEffect, useMemo, useRef } from "react";
 import { Check, Sparkles, Play, Trash2, Clock, Zap, ChevronDown, ChevronUp, Plus, Calendar, Folder } from "lucide-react";
 import type { Task } from "@/lib/types";
 import { useTaskStore } from "@/store/useTaskStore";
-import { getWeekDates, formatShortDate, toISODate, addDays } from "@/lib/dates";
+import { formatShortDate, toISODate, addDays } from "@/lib/dates";
 
 interface TaskCardProps {
   task: Task;
@@ -42,14 +42,24 @@ export default function TaskCard({ task, onStartFocus, compact = false, emphasiz
   const [categoryInput, setCategoryInput] = useState(task.category || "Inbox");
 
   const [isEditingDueDate, setIsEditingDueDate] = useState(false);
-  const currentWeek = useMemo(() => getWeekDates(0), []);
   const todayIso = toISODate(new Date());
   const tomorrowIso = toISODate(addDays(new Date(), 1));
-  // Whatever's left of this week, after Today/Tomorrow get their own
-  // dedicated entries. If today is Sunday this is naturally empty -
-  // Today/Tomorrow/Clear still work fine, there's just nothing "later
-  // this week" left to offer.
-  const restOfWeek = currentWeek.filter((d) => d.iso > todayIso && d.iso !== tomorrowIso);
+  // The next 5 days after tomorrow, generated directly rather than
+  // derived from a Mon-Sun week array - deriving it from "whatever's
+  // left of this calendar week" went empty every Saturday/Sunday, since
+  // there's nothing left in a Mon-Sun week once you're on its last day.
+  // This always offers a full run of upcoming days regardless of what
+  // day of the week today is, rolling into next week when needed.
+  const upcomingDays = useMemo(() => {
+    return Array.from({ length: 5 }).map((_, i) => {
+      const date = addDays(new Date(), i + 2);
+      return {
+        iso: toISODate(date),
+        weekdayShort: date.toLocaleDateString(undefined, { weekday: "short" }),
+        dayNum: date.getDate(),
+      };
+    });
+  }, [todayIso]);
 
   const dueDateRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -158,22 +168,18 @@ export default function TaskCard({ task, onStartFocus, compact = false, emphasiz
       >
         Tomorrow {task.due_date === tomorrowIso && <Check size={12} />}
       </button>
-      {restOfWeek.length > 0 && (
-        <>
-          <div className="my-1 border-t border-folder-pink/20" />
-          <span className="px-3 pt-0.5 pb-1 text-[9px] font-bold uppercase tracking-wide text-ink/40">This Week</span>
-          {restOfWeek.map((day) => (
-            <button
-              key={day.iso}
-              type="button"
-              onClick={() => pickDueDate(day.iso)}
-              className="flex items-center justify-between px-3 py-1.5 text-left text-xs font-medium text-ink hover:bg-folder-pink/15 transition-colors"
-            >
-              {day.weekdayShort} {day.dayNum} {task.due_date === day.iso && <Check size={12} />}
-            </button>
-          ))}
-        </>
-      )}
+      <div className="my-1 border-t border-folder-pink/20" />
+      <span className="px-3 pt-0.5 pb-1 text-[9px] font-bold uppercase tracking-wide text-ink/40">Upcoming</span>
+      {upcomingDays.map((day) => (
+        <button
+          key={day.iso}
+          type="button"
+          onClick={() => pickDueDate(day.iso)}
+          className="flex items-center justify-between px-3 py-1.5 text-left text-xs font-medium text-ink hover:bg-folder-pink/15 transition-colors"
+        >
+          {day.weekdayShort} {day.dayNum} {task.due_date === day.iso && <Check size={12} />}
+        </button>
+      ))}
       <div className="my-1 border-t border-folder-pink/20" />
       <button
         type="button"
