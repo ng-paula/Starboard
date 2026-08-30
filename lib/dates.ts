@@ -67,3 +67,10 @@ export function formatDayLabel(iso: string): string {
   const date = new Date(y, m - 1, d);
   return date.toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" });
 }
+
+// "Aug 31" - used for the compact "peek ahead" line.
+export function formatMonthDay(iso: string): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  const date = new Date(y, m - 1, d);
+  return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}

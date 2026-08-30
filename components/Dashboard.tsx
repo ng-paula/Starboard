@@ -5,7 +5,6 @@ import Image from "next/image";
 import {
   Sparkles,
   Plus,
-  ArrowLeft,
   Zap,
   Calendar,
   Folder,
@@ -16,12 +15,11 @@ import {
   Flame,
   ChevronLeft,
   ChevronRight,
-  Inbox,
   type LucideIcon,
 } from "lucide-react";
 import { useTaskStore } from "@/store/useTaskStore";
 import { useBrainDump } from "@/hooks/useBrainDump";
-import { getWeekDates, toISODate, addDays, formatDayLabel, formatWeekRangeLabel } from "@/lib/dates";
+import { getWeekDates, toISODate, addDays, formatDayLabel, formatWeekRangeLabel, formatMonthDay } from "@/lib/dates";
 import TaskCard from "./TaskCard";
 import FocusModal from "./FocusModal";
 import ReceiptExport from "./ReceiptExport";
@@ -131,14 +129,23 @@ export default function Dashboard({ onBackToLanding }: DashboardProps) {
   const completedCount = tasks.length - pendingTasks.length;
   const progressPct = tasks.length === 0 ? 0 : Math.round((completedCount / tasks.length) * 100);
 
-  const weekDayCounts = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const t of pendingTasks) {
+  const todayIso = toISODate(new Date());
+  const tomorrowIso = toISODate(addDays(new Date(), 1));
+
+  // Per-date totals (including completed) drive the sidebar calendar dots,
+  // the Today/Tomorrow tab badges, and the day-header "X tasks - Y done"
+  // line - all sourced from one place so they can't drift out of sync.
+  const dateStats = useMemo(() => {
+    const map = new Map<string, { total: number; done: number }>();
+    for (const t of tasks) {
       const key = t.due_date || UNSCHEDULED;
-      counts.set(key, (counts.get(key) || 0) + 1);
+      const entry = map.get(key) || { total: 0, done: 0 };
+      entry.total++;
+      if (t.completed) entry.done++;
+      map.set(key, entry);
     }
-    return counts;
-  }, [pendingTasks]);
+    return map;
+  }, [tasks]);
 
   const displayedTasks = useMemo(() => {
     if (activeView === "Completed") {
@@ -149,7 +156,10 @@ export default function Dashboard({ onBackToLanding }: DashboardProps) {
     }
     if (activeView === "Timeline") {
       if (selectedDay === null) return pendingTasks; // overview mode - grouped rendering, but Print Agenda still exports everything shown
-      return pendingTasks.filter((t) => (selectedDay === UNSCHEDULED ? !t.due_date : t.due_date === selectedDay));
+      // A specific day's agenda shows completed tasks too (struck through),
+      // not just outstanding ones - unlike overview mode, which is
+      // deliberately pending-only since it's about what's left to do.
+      return tasks.filter((t) => (selectedDay === UNSCHEDULED ? !t.due_date : t.due_date === selectedDay));
     }
     return tasks;
   }, [tasks, pendingTasks, activeView, activeCategory, selectedDay]);
@@ -159,8 +169,6 @@ export default function Dashboard({ onBackToLanding }: DashboardProps) {
   // instead of quietly mislabeling a missed task as "Later".
   const timelineGroups = useMemo(() => {
     if (activeView !== "Timeline" || selectedDay !== null) return null;
-    const todayIso = toISODate(new Date());
-    const tomorrowIso = toISODate(addDays(new Date(), 1));
 
     const groups: { key: string; label: string; tasks: typeof pendingTasks }[] = [
       { key: "overdue", label: "Overdue", tasks: [] },
@@ -180,7 +188,7 @@ export default function Dashboard({ onBackToLanding }: DashboardProps) {
     }
 
     return groups.filter((g) => g.tasks.length > 0);
-  }, [activeView, selectedDay, pendingTasks]);
+  }, [activeView, selectedDay, pendingTasks, todayIso, tomorrowIso]);
 
   // --- Toast helpers ---
   const pushToast = useCallback((message: string, tone: Toast["tone"] = "info") => {
@@ -358,6 +366,35 @@ export default function Dashboard({ onBackToLanding }: DashboardProps) {
     />
   );
 
+  // Single-day (or Unscheduled) agenda: heading, done-count, and a peek at
+  // whatever's scheduled the day right after this one.
+  const isTimelineDayMode = activeView === "Timeline" && selectedDay !== null;
+  let dayHeading = "";
+  let peek: { iso: string; label: string; count: number } | null = null;
+  const dayStats = selectedDay !== null ? dateStats.get(selectedDay) : undefined;
+
+  if (isTimelineDayMode && selectedDay !== null) {
+    if (selectedDay === UNSCHEDULED) {
+      dayHeading = "Unscheduled";
+    } else {
+      const isRelative = selectedDay === todayIso || selectedDay === tomorrowIso;
+      dayHeading = isRelative
+        ? `${selectedDay === todayIso ? "Today" : "Tomorrow"} · ${formatDayLabel(selectedDay)}`
+        : formatDayLabel(selectedDay);
+
+      const [y, m, d] = selectedDay.split("-").map(Number);
+      const nextIso = toISODate(addDays(new Date(y, m - 1, d), 1));
+      const nextStats = dateStats.get(nextIso);
+      if (nextStats && nextStats.total > 0) {
+        peek = {
+          iso: nextIso,
+          label: nextIso === tomorrowIso ? `Tomorrow, ${formatMonthDay(nextIso)}` : formatDayLabel(nextIso),
+          count: nextStats.total,
+        };
+      }
+    }
+  }
+
   return (
     <div
       className="min-h-screen w-full relative paper-grain"
@@ -528,14 +565,12 @@ export default function Dashboard({ onBackToLanding }: DashboardProps) {
               <div className="bg-white rounded-3xl p-5 shadow-[0_6px_24px_rgba(233,169,194,0.18)] border-2 border-folder-pink/50 flex flex-col gap-3">
                 <div className="flex items-center justify-between">
                   <span className="text-[11px] font-semibold uppercase tracking-wide text-ink/80">Calendar</span>
-                  {selectedDay !== null && (
-                    <button
-                      onClick={() => setSelectedDay(null)}
-                      className="text-[11px] font-semibold text-folder-pinkDeep hover:text-ink transition-colors"
-                    >
-                      Overview
-                    </button>
-                  )}
+                  <button
+                    onClick={() => setSelectedDay(null)}
+                    className="text-[11px] font-semibold text-folder-pinkDeep hover:text-ink transition-colors"
+                  >
+                    Overview
+                  </button>
                 </div>
 
                 <div className="flex items-center justify-between">
@@ -558,7 +593,7 @@ export default function Dashboard({ onBackToLanding }: DashboardProps) {
 
                 <div className="grid grid-cols-7 gap-1" role="tablist" aria-label="Pick a day">
                   {weekDates.map((day) => {
-                    const count = weekDayCounts.get(day.iso) || 0;
+                    const hasTasks = (dateStats.get(day.iso)?.total || 0) > 0;
                     const isSelected = selectedDay === day.iso;
                     return (
                       <button
@@ -576,7 +611,11 @@ export default function Dashboard({ onBackToLanding }: DashboardProps) {
                       >
                         <span className="text-[9px] font-semibold uppercase opacity-80">{day.weekdayShort.charAt(0)}</span>
                         <span className="text-xs font-bold leading-none mt-0.5">{day.dayNum}</span>
-                        <span className="text-[8px] leading-none mt-1 opacity-70 h-2">{count > 0 ? count : ""}</span>
+                        <span
+                          className={`mt-1 h-1 w-1 rounded-full ${
+                            hasTasks ? (isSelected ? "bg-white" : "bg-folder-pinkDeep") : "bg-transparent"
+                          }`}
+                        />
                       </button>
                     );
                   })}
@@ -584,14 +623,11 @@ export default function Dashboard({ onBackToLanding }: DashboardProps) {
 
                 <button
                   onClick={() => setSelectedDay(UNSCHEDULED)}
-                  className={`flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/30 ${
-                    selectedDay === UNSCHEDULED ? "bg-ink text-white" : "bg-ink/8 text-ink/80 hover:bg-ink/15"
+                  className={`text-xs font-semibold transition-colors ${
+                    selectedDay === UNSCHEDULED ? "text-ink" : "text-ink/60 hover:text-ink"
                   }`}
                 >
-                  <Inbox size={12} /> Unscheduled
-                  {(weekDayCounts.get(UNSCHEDULED) || 0) > 0 && (
-                    <span className="opacity-60">({weekDayCounts.get(UNSCHEDULED)})</span>
-                  )}
+                  Unscheduled {(dateStats.get(UNSCHEDULED)?.total || 0) > 0 && `(${dateStats.get(UNSCHEDULED)!.total})`}
                 </button>
               </div>
             )}
@@ -692,17 +728,43 @@ export default function Dashboard({ onBackToLanding }: DashboardProps) {
               </div>
             )}
 
-            {activeView === "Timeline" && selectedDay !== null && (
-              <div className="flex items-center justify-between bg-ink/5 p-3 rounded-2xl border border-ink/10">
-                <span className="text-sm font-medium text-ink/80">
-                  Showing {selectedDay === UNSCHEDULED ? "Unscheduled" : formatDayLabel(selectedDay)}
-                </span>
+            {activeView === "Timeline" && (
+              <div className="flex items-center gap-1 rounded-full bg-ink/8 p-1" role="tablist" aria-label="Timeline shortcuts">
                 <button
+                  role="tab"
+                  aria-selected={selectedDay === null}
                   onClick={() => setSelectedDay(null)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-ink/15 text-ink hover:bg-ink/5 rounded-lg text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/30"
+                  className={`flex-1 px-3 py-1.5 rounded-full text-xs font-semibold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/30 ${
+                    selectedDay === null ? "bg-ink text-white" : "text-ink/80 hover:bg-white"
+                  }`}
                 >
-                  <ArrowLeft size={14} /> Back to overview
+                  Overview
                 </button>
+                <button
+                  role="tab"
+                  aria-selected={selectedDay === todayIso}
+                  onClick={() => setSelectedDay(todayIso)}
+                  className={`flex-1 px-3 py-1.5 rounded-full text-xs font-semibold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/30 ${
+                    selectedDay === todayIso ? "bg-ink text-white" : "text-ink/80 hover:bg-white"
+                  }`}
+                >
+                  Today {(dateStats.get(todayIso)?.total ?? 0) > 0 && dateStats.get(todayIso)!.total}
+                </button>
+                <button
+                  role="tab"
+                  aria-selected={selectedDay === tomorrowIso}
+                  onClick={() => setSelectedDay(tomorrowIso)}
+                  className={`flex-1 px-3 py-1.5 rounded-full text-xs font-semibold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/30 ${
+                    selectedDay === tomorrowIso ? "bg-ink text-white" : "text-ink/80 hover:bg-white"
+                  }`}
+                >
+                  Tomorrow {(dateStats.get(tomorrowIso)?.total ?? 0) > 0 && dateStats.get(tomorrowIso)!.total}
+                </button>
+                {selectedDay !== null && (
+                  <span className="flex-1 px-3 py-1.5 text-center text-xs font-semibold text-ink/60">
+                    {selectedDay === UNSCHEDULED ? "Unscheduled" : formatDayLabel(selectedDay)}
+                  </span>
+                )}
               </div>
             )}
 
@@ -758,6 +820,45 @@ export default function Dashboard({ onBackToLanding }: DashboardProps) {
                       <div className="flex flex-col gap-3">{group.tasks.map(renderTaskCard)}</div>
                     </div>
                   ))}
+                </div>
+              )
+            ) : isTimelineDayMode ? (
+              displayedTasks.length === 0 ? (
+                emptyStateBlock
+              ) : (
+                <div className="bg-white rounded-3xl p-5 shadow-[0_6px_24px_rgba(233,169,194,0.18)] border-2 border-folder-pink/50 flex flex-col">
+                  <div className="flex items-baseline justify-between px-1 pb-2">
+                    <h2 className="text-base font-bold text-ink">{dayHeading}</h2>
+                    <span className="text-xs text-ink/50 font-medium shrink-0 ml-3">
+                      {dayStats?.total ?? displayedTasks.length} task{(dayStats?.total ?? displayedTasks.length) === 1 ? "" : "s"}
+                      {(dayStats?.done ?? 0) > 0 && ` · ${dayStats!.done} done`}
+                    </span>
+                  </div>
+                  <div className="flex flex-col gap-1">{displayedTasks.map((task) => (
+                    <TaskCard
+                      key={task.id}
+                      task={task}
+                      compact
+                      emphasizeSchedule={selectedDay === UNSCHEDULED}
+                      onStartFocus={(t) => {
+                        setFocusReason(null);
+                        setFocusedTaskId(t.id);
+                      }}
+                    />
+                  ))}</div>
+                  {peek && (
+                    <div className="flex items-center justify-between pt-3 mt-2 border-t border-folder-pink/20 px-1">
+                      <span className="text-xs text-ink/60">
+                        {peek.label} · {peek.count} task{peek.count === 1 ? "" : "s"}
+                      </span>
+                      <button
+                        onClick={() => setSelectedDay(peek!.iso)}
+                        className="text-xs font-semibold text-folder-pinkDeep hover:text-ink transition-colors"
+                      >
+                        Peek →
+                      </button>
+                    </div>
+                  )}
                 </div>
               )
             ) : displayedTasks.length === 0 ? (

@@ -9,9 +9,16 @@ import { getWeekDates, formatShortDate } from "@/lib/dates";
 interface TaskCardProps {
   task: Task;
   onStartFocus: (task: Task) => void;
+  // Single-line agenda row used by the Timeline day view, instead of the
+  // full card with every badge. emphasizeSchedule makes the due-date
+  // control the prominent "+ Schedule" affordance rather than a category
+  // chip - used for the Unscheduled bucket, where getting a date onto the
+  // task is the whole point of the row.
+  compact?: boolean;
+  emphasizeSchedule?: boolean;
 }
 
-export default function TaskCard({ task, onStartFocus }: TaskCardProps) {
+export default function TaskCard({ task, onStartFocus, compact = false, emphasizeSchedule = false }: TaskCardProps) {
   // 1. Grab all our actions directly from the Zustand store!
   const {
     toggleTask,
@@ -102,6 +109,102 @@ export default function TaskCard({ task, onStartFocus }: TaskCardProps) {
       setTasksBreakingDown(task.id, false);
     }
   };
+
+  if (compact) {
+    const showScheduleControl = emphasizeSchedule || !task.due_date;
+    return (
+      <div
+        className={`group flex items-center gap-2.5 py-2 px-2.5 rounded-xl transition-colors ${
+          task.completed ? "bg-button-green/10 hover:bg-button-green/15" : "bg-folder-pink/8 hover:bg-folder-pink/15"
+        }`}
+      >
+        <button
+          onClick={() => toggleTask(task.id)}
+          className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 transition-colors ${
+            task.completed ? "border-button-greenDeep bg-button-greenDeep text-white" : "border-folder-pink/50 text-transparent hover:border-button-greenDeep/60"
+          }`}
+        >
+          <Check size={9} strokeWidth={3} />
+        </button>
+
+        <span className={`flex-1 min-w-0 truncate text-sm ${task.completed ? "text-ink/50 line-through" : "text-ink"}`}>
+          {task.title}
+        </span>
+
+        {!task.completed &&
+          (isEditingDueDate ? (
+            <div className="inline-flex items-center gap-0.5 rounded-full bg-stripe-blue/20 border border-stripe-blue/50 px-1 py-0.5 shrink-0">
+              {currentWeek.map((day) => (
+                <button
+                  key={day.iso}
+                  type="button"
+                  onClick={() => {
+                    setDueDate(task.id, day.iso);
+                    setIsEditingDueDate(false);
+                  }}
+                  title={formatShortDate(day.iso)}
+                  className={`w-5 h-5 flex items-center justify-center rounded-full text-[9px] font-bold transition-colors ${
+                    task.due_date === day.iso ? "bg-ink text-white" : "text-ink/70 hover:bg-ink/10"
+                  }`}
+                >
+                  {day.weekdayShort.charAt(0)}
+                </button>
+              ))}
+              <button
+                type="button"
+                onClick={() => {
+                  setDueDate(task.id, null);
+                  setIsEditingDueDate(false);
+                }}
+                title="Clear date"
+                className="w-5 h-5 flex items-center justify-center rounded-full text-ink/50 hover:bg-danger/10 hover:text-danger transition-colors"
+              >
+                <X size={9} />
+              </button>
+            </div>
+          ) : showScheduleControl ? (
+            <button
+              type="button"
+              onClick={() => setIsEditingDueDate(true)}
+              className="shrink-0 inline-flex items-center gap-1 rounded-full bg-stripe-blue/20 px-2 py-0.5 text-[10px] font-semibold text-[#2E6A82] border border-stripe-blue/50 hover:bg-stripe-blue/35 transition-colors"
+              title="Schedule this task"
+            >
+              <Calendar size={10} /> {task.due_date ? formatShortDate(task.due_date) : "Schedule"}
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setIsEditingDueDate(true)}
+              className="shrink-0 inline-flex items-center gap-1 rounded-full bg-ink/5 px-2 py-0.5 text-[10px] font-medium text-ink/70 border border-ink/10 hover:bg-ink/10 transition-colors"
+              title="Move to another day"
+            >
+              <Folder size={9} /> {task.category || "Inbox"}
+            </button>
+          ))}
+
+        <div className="hidden sm:flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+          {!task.completed && (
+            <button
+              onClick={() => onStartFocus(task)}
+              className="p-1.5 rounded-lg bg-[#bce0fd] text-[#2E6A82] hover:bg-[#a6d3fc] transition-colors"
+              title="Focus Timer"
+            >
+              <Play size={11} className="fill-current" />
+            </button>
+          )}
+          <button
+            onClick={handleDeleteClick}
+            aria-label={confirmingDelete ? `Confirm delete "${task.title}"` : `Delete "${task.title}"`}
+            className={`p-1.5 rounded-lg transition-colors ${
+              confirmingDelete ? "bg-danger text-white" : "text-ink/40 hover:bg-danger/10 hover:text-danger"
+            }`}
+          >
+            <Trash2 size={12} />
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div
