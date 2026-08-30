@@ -3,6 +3,10 @@ import type { Task } from '@/lib/types';
 
 interface TaskState {
   tasks: Task[];
+  // Categories only exist implicitly via tasks.category. This lets a
+  // freshly-created, still-empty folder show up in the rail before any
+  // task uses it - same in-memory-only lifetime as everything else here.
+  customCategories: string[];
   // Actions
   addTask: (task: Task) => void;
   addMultipleTasks: (tasks: Task[]) => void;
@@ -15,12 +19,15 @@ interface TaskState {
   updateTaskSubtasks: (id: string, subtasks: any[]) => void;
   moveCategory: (taskId: string, newCategory: string) => void;
   setDueDate: (taskId: string, dueDate: string | null) => void;
+  addCategory: (name: string) => void;
+  renameCategory: (oldName: string, newName: string) => void;
   reorderTasks: (sortedTasks: Task[]) => void;
 }
 
 export const useTaskStore = create<TaskState>((set) => ({
   // We'll start with an empty array. You can paste your dummy tasks here if you want to keep them!
-  tasks: [], 
+  tasks: [],
+  customCategories: [],
 
   reorderTasks: (sortedTasks) => set({ tasks: sortedTasks }),
 
@@ -78,5 +85,16 @@ export const useTaskStore = create<TaskState>((set) => ({
 
   setDueDate: (taskId, dueDate) => set((state) => ({
     tasks: state.tasks.map((t) => t.id === taskId ? { ...t, due_date: dueDate } : t)
+  })),
+
+  addCategory: (name) => set((state) =>
+    state.customCategories.includes(name) || state.tasks.some((t) => t.category === name)
+      ? state
+      : { customCategories: [...state.customCategories, name] }
+  ),
+
+  renameCategory: (oldName, newName) => set((state) => ({
+    tasks: state.tasks.map((t) => t.category === oldName ? { ...t, category: newName } : t),
+    customCategories: state.customCategories.map((c) => c === oldName ? newName : c),
   })),
 }));

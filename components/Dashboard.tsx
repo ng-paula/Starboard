@@ -20,11 +20,33 @@ import {
 import { useTaskStore } from "@/store/useTaskStore";
 import { useBrainDump } from "@/hooks/useBrainDump";
 import { getWeekDates, toISODate, addDays, formatDayLabel, formatWeekRangeLabel, formatMonthDay } from "@/lib/dates";
+import type { Task } from "@/lib/types";
 import TaskCard from "./TaskCard";
 import FocusModal from "./FocusModal";
 import ReceiptExport from "./ReceiptExport";
 
 const UNSCHEDULED = "unscheduled" as const;
+
+// A folder's dot color is picked by its position in the order folders
+// first appeared - stable as long as folders aren't reordered, which
+// they never are (there's no reorder UI for folders).
+const FOLDER_COLORS = [
+  "#F2A6B0", // washi pink
+  "#8FC4DE", // deep stripe blue
+  "#E8C170", // warm tan
+  "#7BA98A", // button green
+  "#A78BC4", // soft purple
+  "#C08552", // warm brown
+  "#E98A7A", // coral
+  "#6FA8A0", // teal
+];
+
+function formatMinutes(mins: number): string {
+  if (mins < 60) return `${mins}m`;
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  return m === 0 ? `${h}h` : `${h}h ${m}m`;
+}
 
 interface DashboardProps {
   onBackToLanding: () => void;
@@ -76,7 +98,18 @@ const VIEWS: {
 ];
 
 export default function Dashboard({ onBackToLanding }: DashboardProps) {
-  const { tasks, addTask, clearCompleted, toggleTask, reorderTasks, toggleSubtask } = useTaskStore();
+  const {
+    tasks,
+    customCategories,
+    addTask,
+    clearCompleted,
+    toggleTask,
+    reorderTasks,
+    toggleSubtask,
+    moveCategory,
+    renameCategory,
+    addCategory,
+  } = useTaskStore();
   const { parseText, isLoadingAi } = useBrainDump();
 
   const [inputVal, setInputVal] = useState("");
@@ -84,10 +117,22 @@ export default function Dashboard({ onBackToLanding }: DashboardProps) {
   const [isOptimizing, setIsOptimizing] = useState(false);
   const [focusedTaskId, setFocusedTaskId] = useState<string | null>(null);
   const [focusReason, setFocusReason] = useState<string | null>(null);
-  const [isReceiptModalOpen, setIsReceiptModalOpen] = useState(false);
+  const [receiptPayload, setReceiptPayload] = useState<{ tasks: Task[]; title: string } | null>(null);
 
-  const [activeView, setActiveView] = useState<ViewMode>("Categories");
+  // Timeline is the default landing view - its functionality (what's due
+  // today, quick scheduling) is more immediately useful than browsing
+  // folders when the dashboard first opens.
+  const [activeView, setActiveView] = useState<ViewMode>("Timeline");
   const [activeCategory, setActiveCategory] = useState<string>("All");
+
+  // Folder Rail (Categories view) - renaming a folder, creating a new
+  // (possibly still-empty) one, and the folder-scoped "Add a task to X"
+  // field shown in that folder's own panel.
+  const [isRenamingFolder, setIsRenamingFolder] = useState(false);
+  const [folderNameInput, setFolderNameInput] = useState("");
+  const [isAddingFolder, setIsAddingFolder] = useState(false);
+  const [newFolderInput, setNewFolderInput] = useState("");
+  const [folderTaskInput, setFolderTaskInput] = useState("");
 
   // Weekly Timeline: a real Mon-Sun week of dates instead of a vague
   // Today/Tomorrow/Later enum, so tasks land on the actual day they're
@@ -120,10 +165,28 @@ export default function Dashboard({ onBackToLanding }: DashboardProps) {
     return counts;
   }, [tasks]);
 
-  const categories = useMemo(
-    () => ["All", ...Array.from(new Set(tasks.map((t) => t.category).filter(Boolean) as string[]))],
-    [tasks]
-  );
+  // Folder names come from whatever tasks currently use them, plus any
+  // still-empty folders someone created via "+ New" that no task has
+  // touched yet.
+  const folderNames = useMemo(() => {
+    const fromTasks = Array.from(new Set(tasks.map((t) => t.category).filter(Boolean) as string[]));
+    return Array.from(new Set([...fromTasks, ...customCategories]));
+  }, [tasks, customCategories]);
+
+  const getFolderColor = (cat: string) => {
+    const idx = folderNames.indexOf(cat);
+    return idx === -1 ? FOLDER_COLORS[0] : FOLDER_COLORS[idx % FOLDER_COLORS.length];
+  };
+
+  const categoryMinutes = useMemo(() => {
+    const sums = new Map<string, number>();
+    for (const t of tasks) {
+      if (t.completed) continue;
+      const key = t.category || "Inbox";
+      sums.set(key, (sums.get(key) || 0) + (t.estimated_minutes || 0));
+    }
+    return sums;
+  }, [tasks]);
 
   const pendingTasks = useMemo(() => tasks.filter((t) => !t.completed), [tasks]);
   const completedCount = tasks.length - pendingTasks.length;
@@ -220,8 +283,12 @@ export default function Dashboard({ onBackToLanding }: DashboardProps) {
       if (success) {
         setInputVal("");
         setIsSparkleMode(false);
-        setActiveView("Categories");
-        setActiveCategory("All");
+        // Most brain-dumped tasks land Unscheduled (the AI only assigns
+        // Today/Tomorrow when the text says so explicitly) - jump straight
+        // there instead of Folders, since that's exactly where the
+        // one-click "Schedule" control lives to finish the job.
+        setActiveView("Timeline");
+        setSelectedDay(UNSCHEDULED);
         pushToast("Tasks organized from your brain dump.", "success");
       } else {
         pushToast("Couldn't parse that — try rephrasing.", "error");
@@ -242,30 +309,88 @@ export default function Dashboard({ onBackToLanding }: DashboardProps) {
     }
   };
 
+  // Folder Rail: the "Add a task to {folder}..." field scoped to
+  // whichever folder is currently open in the main panel.
+  const handleAddTaskToFolder = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!folderTaskInput.trim()) return;
+    addTask({
+      id: crypto.randomUUID(),
+      title: folderTaskInput.trim(),
+      completed: false,
+      priority: "important",
+      energy_level: "high_focus",
+      estimated_minutes: 25,
+      category: activeCategory === "All" ? "Inbox" : activeCategory,
+      due_date: null,
+      subtasks: [],
+    });
+    setFolderTaskInput("");
+  };
+
+  const handleRenameSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const trimmed = folderNameInput.trim();
+    if (trimmed && trimmed !== activeCategory) {
+      renameCategory(activeCategory, trimmed);
+      setActiveCategory(trimmed);
+    }
+    setIsRenamingFolder(false);
+  };
+
+  const handleAddFolderSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const trimmed = newFolderInput.trim();
+    if (trimmed) {
+      addCategory(trimmed);
+      setActiveCategory(trimmed);
+    }
+    setNewFolderInput("");
+    setIsAddingFolder(false);
+  };
+
+  // Drag-and-drop filing: dropping a task (dragged from anywhere in the
+  // Folder Rail) onto a folder row or the in-panel drop zone refiles it.
+  const handleDropOnCategory = (e: React.DragEvent, category: string) => {
+    e.preventDefault();
+    const taskId = e.dataTransfer.getData("text/plain");
+    if (taskId) moveCategory(taskId, category);
+  };
+
   const handleOptimizeFlow = async () => {
-    if (pendingTasks.length <= 1) {
+    // Optimizing from inside a specific folder only reorders that
+    // folder's own tasks, matching the per-folder "Optimize Flow"
+    // button shown in the Folder Rail header.
+    const optimizeScope =
+      activeView === "Categories" && activeCategory !== "All"
+        ? pendingTasks.filter((t) => t.category === activeCategory)
+        : pendingTasks;
+
+    if (optimizeScope.length <= 1) {
       pushToast("Add a few more tasks first to optimize your flow!", "info");
       return;
     }
 
     setIsOptimizing(true);
     try {
-      // Only pending tasks need reordering - completed ones have nothing
-      // left to sequence and would just be an unnecessary chunk of the
-      // request payload.
+      // Only the in-scope tasks need reordering - anything outside that
+      // scope (completed tasks, or other folders' tasks when scoped) has
+      // nothing to gain from the round trip and would just be an
+      // unnecessary chunk of the request payload.
       const res = await fetch("/api/optimize", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tasks: pendingTasks }),
+        body: JSON.stringify({ tasks: optimizeScope }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
 
       if (data.tasks) {
-        // reorderTasks fully replaces the store's task array, so the
-        // completed tasks we deliberately left out of the request have
-        // to be reattached here or they'd vanish.
-        reorderTasks([...data.tasks, ...tasks.filter((t) => t.completed)]);
+        // reorderTasks fully replaces the store's task array, so anything
+        // left out of the request has to be reattached here or it vanishes.
+        const optimizedIds = new Set(data.tasks.map((t: Task) => t.id));
+        const rest = tasks.filter((t) => !optimizedIds.has(t.id));
+        reorderTasks([...data.tasks, ...rest]);
         pushToast("Flow optimized.", "success");
       }
     } catch (err: any) {
@@ -335,8 +460,15 @@ export default function Dashboard({ onBackToLanding }: DashboardProps) {
         icon: Calendar,
       };
     }
-    if (activeView === "Categories" && activeCategory !== "All") {
-      return { title: `Nothing in ${activeCategory} yet.`, sub: "Add a task or pick another folder.", icon: Folder };
+    if (activeView === "Categories") {
+      if (activeCategory !== "All") {
+        return { title: `Nothing in ${activeCategory} yet.`, sub: "Add a task above, or drag one in from another folder.", icon: Folder };
+      }
+      return {
+        title: "No tasks yet.",
+        sub: "Add one above, or head to Timeline to brain-dump with AI.",
+        icon: LayoutGrid,
+      };
     }
     return {
       title: "Nothing to see here right now.",
@@ -504,62 +636,130 @@ export default function Dashboard({ onBackToLanding }: DashboardProps) {
         {/* LEFT COLUMN: Add task + progress */}
         <aside className="w-full lg:w-80 flex flex-col gap-6 shrink-0">
           <div className="flex flex-col gap-5 sticky top-24">
-            <div className="bg-white rounded-3xl p-5 shadow-[0_6px_24px_rgba(233,169,194,0.18)] border-2 border-folder-pink/50 flex flex-col gap-2">
-              <form onSubmit={handleAddTask} className="flex flex-col gap-2">
-                <div className="flex items-center justify-between px-1">
-                  <span className="text-[11px] font-semibold uppercase tracking-wide text-ink/80">Add task</span>
+            {activeView !== "Categories" && (
+              <div className="bg-white rounded-3xl p-5 shadow-[0_6px_24px_rgba(233,169,194,0.18)] border-2 border-folder-pink/50 flex flex-col gap-2">
+                <form onSubmit={handleAddTask} className="flex flex-col gap-2">
+                  <div className="flex items-center justify-between px-1">
+                    <span className="text-[11px] font-semibold uppercase tracking-wide text-ink/80">Add task</span>
+                    <button
+                      type="button"
+                      onClick={() => setIsSparkleMode(!isSparkleMode)}
+                      aria-pressed={isSparkleMode}
+                      aria-label="Toggle AI brain-dump mode"
+                      className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-folder-pinkDeep/40 ${
+                        isSparkleMode ? "bg-folder-pinkDeep text-white" : "bg-folder-pink/25 text-ink hover:bg-folder-pink/40"
+                      }`}
+                    >
+                      <Sparkles size={12} /> AI Mode
+                    </button>
+                  </div>
+
+                  <div className="relative">
+                    {isSparkleMode ? (
+                      <textarea
+                        value={inputVal}
+                        onChange={(e) => setInputVal(e.target.value)}
+                        placeholder="Dump chaotic thoughts here..."
+                        aria-label="Brain dump input"
+                        className="w-full p-3.5 pr-12 rounded-xl border-2 border-folder-pink/50 focus:border-folder-pinkDeep focus:outline-none min-h-[100px] text-sm resize-none text-ink bg-folder-pink/10 transition-all duration-200"
+                      />
+                    ) : (
+                      <input
+                        type="text"
+                        value={inputVal}
+                        onChange={(e) => setInputVal(e.target.value)}
+                        placeholder="Quick task title..."
+                        aria-label="Quick task title"
+                        className="w-full p-3.5 pr-12 rounded-xl border-2 border-ink/10 focus:border-ink/30 focus:outline-none text-sm text-ink bg-ink/5 transition-all duration-200"
+                      />
+                    )}
+                    <button
+                      type="submit"
+                      disabled={isLoadingAi || !inputVal.trim()}
+                      aria-label={isSparkleMode ? "Parse brain dump into tasks" : "Add task"}
+                      className="absolute right-2 bottom-2 p-2 bg-ink text-white rounded-lg transition-transform hover:scale-105 active:scale-95 disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/40"
+                    >
+                      {isLoadingAi ? <Sparkles size={14} className="animate-spin text-folder-pinkDeep" /> : <Plus size={14} />}
+                    </button>
+                  </div>
+
+                  <p
+                    className={`text-xs text-folder-pinkDeep font-medium px-1 min-h-[1rem] transition-opacity duration-300 ${
+                      isLoadingAi ? "opacity-100" : "opacity-0"
+                    }`}
+                    aria-live="polite"
+                  >
+                    {isLoadingAi ? AI_LOADING_MESSAGES[aiMessageIndex] : ""}
+                  </p>
+                </form>
+              </div>
+            )}
+
+            {activeView === "Categories" && (
+              <div className="bg-white rounded-3xl p-5 shadow-[0_6px_24px_rgba(233,169,194,0.18)] border-2 border-folder-pink/50 flex flex-col gap-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-semibold uppercase tracking-wide text-ink/80">Folders</span>
                   <button
-                    type="button"
-                    onClick={() => setIsSparkleMode(!isSparkleMode)}
-                    aria-pressed={isSparkleMode}
-                    aria-label="Toggle AI brain-dump mode"
-                    className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-folder-pinkDeep/40 ${
-                      isSparkleMode ? "bg-folder-pinkDeep text-white" : "bg-folder-pink/25 text-ink hover:bg-folder-pink/40"
+                    onClick={() => setIsAddingFolder(true)}
+                    className="text-[11px] font-semibold text-folder-pinkDeep hover:text-ink transition-colors"
+                  >
+                    + New
+                  </button>
+                </div>
+
+                <div className="flex flex-col gap-1">
+                  <button
+                    onClick={() => setActiveCategory("All")}
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={(e) => handleDropOnCategory(e, "Inbox")}
+                    className={`flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-semibold transition-colors ${
+                      activeCategory === "All" ? "bg-ink text-white" : "text-ink hover:bg-ink/8"
                     }`}
                   >
-                    <Sparkles size={12} /> AI Mode
+                    <span className={`h-2 w-2 rounded-full shrink-0 ${activeCategory === "All" ? "bg-white" : "bg-ink/60"}`} />
+                    <span className="flex-1 text-left truncate">All tasks</span>
+                    <span className={activeCategory === "All" ? "opacity-80" : "text-ink/50"}>{pendingTasks.length}</span>
                   </button>
-                </div>
 
-                <div className="relative">
-                  {isSparkleMode ? (
-                    <textarea
-                      value={inputVal}
-                      onChange={(e) => setInputVal(e.target.value)}
-                      placeholder="Dump chaotic thoughts here..."
-                      aria-label="Brain dump input"
-                      className="w-full p-3.5 pr-12 rounded-xl border-2 border-folder-pink/50 focus:border-folder-pinkDeep focus:outline-none min-h-[100px] text-sm resize-none text-ink bg-folder-pink/10 transition-all duration-200"
-                    />
-                  ) : (
-                    <input
-                      type="text"
-                      value={inputVal}
-                      onChange={(e) => setInputVal(e.target.value)}
-                      placeholder="Quick task title..."
-                      aria-label="Quick task title"
-                      className="w-full p-3.5 pr-12 rounded-xl border-2 border-ink/10 focus:border-ink/30 focus:outline-none text-sm text-ink bg-ink/5 transition-all duration-200"
-                    />
+                  {folderNames.map((cat) => (
+                    <button
+                      key={cat}
+                      onClick={() => setActiveCategory(cat)}
+                      onDragOver={(e) => e.preventDefault()}
+                      onDrop={(e) => handleDropOnCategory(e, cat)}
+                      className={`flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium transition-colors ${
+                        activeCategory === cat ? "bg-ink text-white" : "text-ink/80 hover:bg-ink/8"
+                      }`}
+                    >
+                      <span
+                        className="h-2 w-2 rounded-full shrink-0"
+                        style={{ backgroundColor: activeCategory === cat ? "#fff" : getFolderColor(cat) }}
+                      />
+                      <span className="flex-1 text-left truncate">{cat}</span>
+                      <span className={activeCategory === cat ? "opacity-80" : "text-ink/50"}>{categoryCounts.get(cat) || 0}</span>
+                    </button>
+                  ))}
+
+                  {isAddingFolder && (
+                    <form onSubmit={handleAddFolderSubmit} className="flex items-center gap-1.5 px-1 pt-1">
+                      <input
+                        autoFocus
+                        value={newFolderInput}
+                        onChange={(e) => setNewFolderInput(e.target.value)}
+                        onBlur={() => {
+                          if (!newFolderInput.trim()) setIsAddingFolder(false);
+                        }}
+                        placeholder="Folder name..."
+                        className="flex-1 rounded-lg border border-folder-pink/50 bg-white px-2 py-1 text-xs outline-none focus:border-folder-pinkDeep"
+                      />
+                      <button type="submit" className="text-xs font-semibold text-folder-pinkDeep hover:text-ink">
+                        Add
+                      </button>
+                    </form>
                   )}
-                  <button
-                    type="submit"
-                    disabled={isLoadingAi || !inputVal.trim()}
-                    aria-label={isSparkleMode ? "Parse brain dump into tasks" : "Add task"}
-                    className="absolute right-2 bottom-2 p-2 bg-ink text-white rounded-lg transition-transform hover:scale-105 active:scale-95 disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/40"
-                  >
-                    {isLoadingAi ? <Sparkles size={14} className="animate-spin text-folder-pinkDeep" /> : <Plus size={14} />}
-                  </button>
                 </div>
-
-                <p
-                  className={`text-xs text-folder-pinkDeep font-medium px-1 min-h-[1rem] transition-opacity duration-300 ${
-                    isLoadingAi ? "opacity-100" : "opacity-0"
-                  }`}
-                  aria-live="polite"
-                >
-                  {isLoadingAi ? AI_LOADING_MESSAGES[aiMessageIndex] : ""}
-                </p>
-              </form>
-            </div>
+              </div>
+            )}
 
             {activeView === "Timeline" && (
               <div className="bg-white rounded-3xl p-5 shadow-[0_6px_24px_rgba(233,169,194,0.18)] border-2 border-folder-pink/50 flex flex-col gap-3">
@@ -661,28 +861,75 @@ export default function Dashboard({ onBackToLanding }: DashboardProps) {
           <div className="relative bg-white rounded-3xl p-5 shadow-[0_6px_24px_rgba(233,169,194,0.18)] border-2 border-folder-pink/50 flex flex-col gap-4">
             <div className="absolute -top-2.5 left-8 w-16 h-3 bg-stripe-blue rounded-t-lg" aria-hidden="true" />
             <div className="flex items-center justify-between flex-wrap gap-3">
-              <h1 className="text-2xl font-bold text-ink flex items-center gap-2">
-                {activeView === "Categories" && (
-                  <>
-                    <Folder className="text-folder-pinkDeep" /> Task Folders
-                  </>
-                )}
-                {activeView === "Timeline" && (
-                  <>
-                    <Calendar className="text-[#2E6A82]" /> Schedule
-                  </>
-                )}
-                {activeView === "Completed" && (
-                  <>
-                    <CheckSquare className="text-button-greenDark" /> Archive
-                  </>
-                )}
-              </h1>
+              {activeView === "Categories" ? (
+                isRenamingFolder ? (
+                  <form onSubmit={handleRenameSubmit} className="flex items-center gap-2">
+                    <span className="h-3 w-3 rounded-full shrink-0" style={{ backgroundColor: getFolderColor(activeCategory) }} />
+                    <input
+                      autoFocus
+                      value={folderNameInput}
+                      onChange={(e) => setFolderNameInput(e.target.value)}
+                      onBlur={handleRenameSubmit}
+                      className="text-2xl font-bold text-ink bg-transparent border-b-2 border-folder-pinkDeep outline-none w-40"
+                    />
+                  </form>
+                ) : (
+                  <div className="flex items-baseline gap-2 flex-wrap">
+                    <span
+                      className="h-3 w-3 rounded-full shrink-0 self-center"
+                      style={{ backgroundColor: activeCategory === "All" ? "#5B4B45" : getFolderColor(activeCategory) }}
+                    />
+                    <h1 className="text-2xl font-bold text-ink">{activeCategory === "All" ? "All Tasks" : activeCategory}</h1>
+                    <span className="text-xs text-ink/50 font-medium">
+                      {(activeCategory === "All" ? pendingTasks.length : categoryCounts.get(activeCategory) || 0)} task
+                      {(activeCategory === "All" ? pendingTasks.length : categoryCounts.get(activeCategory) || 0) === 1 ? "" : "s"} ·{" "}
+                      {formatMinutes(activeCategory === "All" ? pendingTasks.reduce((sum, t) => sum + (t.estimated_minutes || 0), 0) : categoryMinutes.get(activeCategory) || 0)} planned
+                    </span>
+                  </div>
+                )
+              ) : (
+                <h1 className="text-2xl font-bold text-ink flex items-center gap-2">
+                  {activeView === "Timeline" && (
+                    <>
+                      <Calendar className="text-[#2E6A82]" /> Schedule
+                    </>
+                  )}
+                  {activeView === "Completed" && (
+                    <>
+                      <CheckSquare className="text-button-greenDark" /> Archive
+                    </>
+                  )}
+                </h1>
+              )}
 
               <div className="flex items-center gap-2">
+                {activeView === "Categories" && activeCategory !== "All" && !isRenamingFolder && (
+                  <button
+                    onClick={() => {
+                      setFolderNameInput(activeCategory);
+                      setIsRenamingFolder(true);
+                    }}
+                    className="flex items-center gap-1.5 px-3.5 py-1.5 bg-white border border-ink/15 hover:bg-ink/5 text-ink rounded-xl text-xs font-semibold transition-colors shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/30"
+                  >
+                    Rename
+                  </button>
+                )}
+                {activeView === "Categories" && (
+                  <button
+                    onClick={() =>
+                      setReceiptPayload({
+                        tasks: activeCategory === "All" ? tasks : tasks.filter((t) => t.category === activeCategory),
+                        title: activeCategory === "All" ? "All Tasks" : activeCategory,
+                      })
+                    }
+                    className="flex items-center gap-1.5 px-3.5 py-1.5 bg-white border border-ink/15 hover:bg-ink/5 text-ink rounded-xl text-xs font-semibold transition-colors shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/30"
+                  >
+                    <Receipt size={14} /> Print
+                  </button>
+                )}
                 {activeView === "Timeline" && (
                   <button
-                    onClick={() => setIsReceiptModalOpen(true)}
+                    onClick={() => setReceiptPayload({ tasks: displayedTasks, title: "Starboard" })}
                     className="flex items-center gap-1.5 px-3.5 py-1.5 bg-white border border-ink/15 hover:bg-ink/5 text-ink rounded-xl text-xs font-semibold transition-colors shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/30"
                   >
                     <Receipt size={14} /> Print Agenda
@@ -691,9 +938,13 @@ export default function Dashboard({ onBackToLanding }: DashboardProps) {
                 {activeView !== "Completed" && (
                   <button
                     onClick={handleOptimizeFlow}
-                    disabled={isOptimizing || pendingTasks.length <= 1}
+                    disabled={
+                      isOptimizing ||
+                      (activeView === "Categories" && activeCategory !== "All"
+                        ? (categoryCounts.get(activeCategory) || 0) <= 1
+                        : pendingTasks.length <= 1)
+                    }
                     aria-label="Optimize task flow order"
-                    title={pendingTasks.length <= 1 ? "Add a few more tasks to optimize flow" : undefined}
                     className="flex items-center gap-1.5 px-3.5 py-1.5 bg-folder-pink/20 hover:bg-folder-pink/35 text-ink rounded-xl text-xs font-semibold transition-colors disabled:opacity-40 disabled:hover:bg-folder-pink/20 border border-folder-pink/50 shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-folder-pinkDeep/40"
                   >
                     <Sparkles size={14} className={isOptimizing ? "animate-spin" : ""} />
@@ -704,28 +955,23 @@ export default function Dashboard({ onBackToLanding }: DashboardProps) {
             </div>
 
             {activeView === "Categories" && (
-              <div
-                className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-hide"
-                role="tablist"
-                aria-label="Filter by category"
-              >
-                {categories.map((cat) => {
-                  const count = cat === "All" ? pendingTasks.length : categoryCounts.get(cat as string) || 0;
-                  return (
-                    <button
-                      key={cat as string}
-                      role="tab"
-                      aria-selected={activeCategory === cat}
-                      onClick={() => setActiveCategory(cat as string)}
-                      className={`whitespace-nowrap px-4 py-1.5 rounded-full text-xs font-semibold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/30 ${
-                        activeCategory === cat ? "bg-ink text-white" : "bg-ink/8 text-ink/80 hover:bg-ink/15"
-                      }`}
-                    >
-                      {cat as string} {count > 0 && <span className="opacity-60">({count})</span>}
-                    </button>
-                  );
-                })}
-              </div>
+              <form onSubmit={handleAddTaskToFolder} className="relative">
+                <input
+                  value={folderTaskInput}
+                  onChange={(e) => setFolderTaskInput(e.target.value)}
+                  placeholder={`Add a task to ${activeCategory === "All" ? "Inbox" : activeCategory}...`}
+                  aria-label={`Add a task to ${activeCategory === "All" ? "Inbox" : activeCategory}`}
+                  className="w-full p-3.5 pr-12 rounded-xl border-2 border-folder-pink/40 bg-folder-pink/10 focus:border-folder-pinkDeep focus:outline-none text-sm text-ink transition-all duration-200"
+                />
+                <button
+                  type="submit"
+                  disabled={!folderTaskInput.trim()}
+                  aria-label="Add task"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 p-2 bg-ink text-white rounded-lg transition-transform hover:scale-105 active:scale-95 disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/40"
+                >
+                  <Plus size={14} />
+                </button>
+              </form>
             )}
 
             {activeView === "Timeline" && (
@@ -775,7 +1021,7 @@ export default function Dashboard({ onBackToLanding }: DashboardProps) {
                 </span>
                 <div className="flex items-center gap-2">
                   <button
-                    onClick={() => setIsReceiptModalOpen(true)}
+                    onClick={() => setReceiptPayload({ tasks: displayedTasks, title: "Starboard" })}
                     disabled={displayedTasks.length === 0}
                     className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-ink/15 text-ink hover:bg-ink/5 rounded-lg text-xs font-semibold transition-colors disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/30"
                   >
@@ -861,6 +1107,31 @@ export default function Dashboard({ onBackToLanding }: DashboardProps) {
                   )}
                 </div>
               )
+            ) : activeView === "Categories" ? (
+              <>
+                {displayedTasks.length === 0
+                  ? emptyStateBlock
+                  : displayedTasks.map((task) => (
+                      <TaskCard
+                        key={task.id}
+                        task={task}
+                        draggable
+                        onStartFocus={(t) => {
+                          setFocusReason(null);
+                          setFocusedTaskId(t.id);
+                        }}
+                      />
+                    ))}
+                {activeCategory !== "All" && (
+                  <div
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={(e) => handleDropOnCategory(e, activeCategory)}
+                    className="flex items-center justify-center p-6 text-center rounded-2xl border-2 border-dashed border-folder-pink/50 text-xs font-medium text-ink/50"
+                  >
+                    Drag tasks here to file them under {activeCategory}
+                  </div>
+                )}
+              </>
             ) : displayedTasks.length === 0 ? (
               emptyStateBlock
             ) : (
@@ -887,8 +1158,8 @@ export default function Dashboard({ onBackToLanding }: DashboardProps) {
         />
       )}
 
-      {isReceiptModalOpen && (
-        <ReceiptExport tasks={displayedTasks} onClose={() => setIsReceiptModalOpen(false)} />
+      {receiptPayload && (
+        <ReceiptExport tasks={receiptPayload.tasks} title={receiptPayload.title} onClose={() => setReceiptPayload(null)} />
       )}
     </div>
   );

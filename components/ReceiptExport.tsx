@@ -8,9 +8,10 @@ import type { Task } from "@/lib/types";
 interface ReceiptExportProps {
   tasks: Task[];
   onClose: () => void;
+  title?: string;
 }
 
-export default function ReceiptExport({ tasks, onClose }: ReceiptExportProps) {
+export default function ReceiptExport({ tasks, onClose, title = "Starboard" }: ReceiptExportProps) {
   const receiptRef = useRef<HTMLDivElement>(null);
   const [exporting, setExporting] = useState(false);
 
@@ -33,7 +34,8 @@ export default function ReceiptExport({ tasks, onClose }: ReceiptExportProps) {
       });
       const link = document.createElement("a");
       const today = new Date().toISOString().slice(0, 10);
-      link.download = `starboard-${today}.png`;
+      const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "starboard";
+      link.download = `${slug}-${today}.png`;
       link.href = dataUrl;
       link.click();
     } catch {
@@ -76,7 +78,7 @@ export default function ReceiptExport({ tasks, onClose }: ReceiptExportProps) {
             className="w-full bg-[#FFFDF8] px-6 py-8 font-mono text-slate-800"
           >
             <p className="text-center text-3xl font-bold tracking-tighter">
-              Starboard
+              {title}
             </p>
             <p className="mt-1 text-center text-xs text-slate-500">{dateLabel}</p>
             <div className="my-4 border-t border-dashed border-slate-300" />

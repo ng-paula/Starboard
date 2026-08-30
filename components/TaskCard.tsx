@@ -1,10 +1,10 @@
 "use client";
 
 import React, { useState, useEffect, useMemo, useRef } from "react";
-import { Check, Sparkles, Play, Trash2, Clock, Zap, ChevronDown, ChevronUp, Plus, Calendar, Folder, X } from "lucide-react";
+import { Check, Sparkles, Play, Trash2, Clock, Zap, ChevronDown, ChevronUp, Plus, Calendar, Folder } from "lucide-react";
 import type { Task } from "@/lib/types";
 import { useTaskStore } from "@/store/useTaskStore";
-import { getWeekDates, formatShortDate } from "@/lib/dates";
+import { getWeekDates, formatShortDate, toISODate, addDays } from "@/lib/dates";
 
 interface TaskCardProps {
   task: Task;
@@ -16,9 +16,12 @@ interface TaskCardProps {
   // task is the whole point of the row.
   compact?: boolean;
   emphasizeSchedule?: boolean;
+  // Lets the Folder Rail's drag-and-drop filing work - only passed true
+  // from views that have a drop target for it (see Dashboard.tsx).
+  draggable?: boolean;
 }
 
-export default function TaskCard({ task, onStartFocus, compact = false, emphasizeSchedule = false }: TaskCardProps) {
+export default function TaskCard({ task, onStartFocus, compact = false, emphasizeSchedule = false, draggable = false }: TaskCardProps) {
   // 1. Grab all our actions directly from the Zustand store!
   const {
     toggleTask,
@@ -40,6 +43,30 @@ export default function TaskCard({ task, onStartFocus, compact = false, emphasiz
 
   const [isEditingDueDate, setIsEditingDueDate] = useState(false);
   const currentWeek = useMemo(() => getWeekDates(0), []);
+  const todayIso = toISODate(new Date());
+  const tomorrowIso = toISODate(addDays(new Date(), 1));
+  // Whatever's left of this week, after Today/Tomorrow get their own
+  // dedicated entries. If today is Sunday this is naturally empty -
+  // Today/Tomorrow/Clear still work fine, there's just nothing "later
+  // this week" left to offer.
+  const restOfWeek = currentWeek.filter((d) => d.iso > todayIso && d.iso !== tomorrowIso);
+
+  const dueDateRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!isEditingDueDate) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (dueDateRef.current && !dueDateRef.current.contains(e.target as Node)) {
+        setIsEditingDueDate(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [isEditingDueDate]);
+
+  const pickDueDate = (iso: string | null) => {
+    setDueDate(task.id, iso);
+    setIsEditingDueDate(false);
+  };
 
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const confirmDeleteTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -110,6 +137,54 @@ export default function TaskCard({ task, onStartFocus, compact = false, emphasiz
     }
   };
 
+  // Real dropdown (Today / Tomorrow / rest of this week / clear) instead
+  // of a row of day buttons - used by both the full and compact layouts.
+  const dueDateDropdown = (
+    <div
+      ref={dueDateRef}
+      className="absolute z-20 top-full right-0 mt-1 w-36 rounded-xl bg-white border border-folder-pink/40 shadow-lg py-1 flex flex-col"
+    >
+      <button
+        type="button"
+        onClick={() => pickDueDate(todayIso)}
+        className="flex items-center justify-between px-3 py-1.5 text-left text-xs font-medium text-ink hover:bg-folder-pink/15 transition-colors"
+      >
+        Today {task.due_date === todayIso && <Check size={12} />}
+      </button>
+      <button
+        type="button"
+        onClick={() => pickDueDate(tomorrowIso)}
+        className="flex items-center justify-between px-3 py-1.5 text-left text-xs font-medium text-ink hover:bg-folder-pink/15 transition-colors"
+      >
+        Tomorrow {task.due_date === tomorrowIso && <Check size={12} />}
+      </button>
+      {restOfWeek.length > 0 && (
+        <>
+          <div className="my-1 border-t border-folder-pink/20" />
+          <span className="px-3 pt-0.5 pb-1 text-[9px] font-bold uppercase tracking-wide text-ink/40">This Week</span>
+          {restOfWeek.map((day) => (
+            <button
+              key={day.iso}
+              type="button"
+              onClick={() => pickDueDate(day.iso)}
+              className="flex items-center justify-between px-3 py-1.5 text-left text-xs font-medium text-ink hover:bg-folder-pink/15 transition-colors"
+            >
+              {day.weekdayShort} {day.dayNum} {task.due_date === day.iso && <Check size={12} />}
+            </button>
+          ))}
+        </>
+      )}
+      <div className="my-1 border-t border-folder-pink/20" />
+      <button
+        type="button"
+        onClick={() => pickDueDate(null)}
+        className="px-3 py-1.5 text-left text-xs font-medium text-danger hover:bg-danger/10 transition-colors"
+      >
+        No date
+      </button>
+    </div>
+  );
+
   if (compact) {
     const showScheduleControl = emphasizeSchedule || !task.due_date;
     return (
@@ -131,56 +206,30 @@ export default function TaskCard({ task, onStartFocus, compact = false, emphasiz
           {task.title}
         </span>
 
-        {!task.completed &&
-          (isEditingDueDate ? (
-            <div className="inline-flex items-center gap-0.5 rounded-full bg-stripe-blue/20 border border-stripe-blue/50 px-1 py-0.5 shrink-0">
-              {currentWeek.map((day) => (
-                <button
-                  key={day.iso}
-                  type="button"
-                  onClick={() => {
-                    setDueDate(task.id, day.iso);
-                    setIsEditingDueDate(false);
-                  }}
-                  title={formatShortDate(day.iso)}
-                  className={`w-5 h-5 flex items-center justify-center rounded-full text-[9px] font-bold transition-colors ${
-                    task.due_date === day.iso ? "bg-ink text-white" : "text-ink/70 hover:bg-ink/10"
-                  }`}
-                >
-                  {day.weekdayShort.charAt(0)}
-                </button>
-              ))}
+        {!task.completed && (
+          <div className="relative shrink-0">
+            {showScheduleControl ? (
               <button
                 type="button"
-                onClick={() => {
-                  setDueDate(task.id, null);
-                  setIsEditingDueDate(false);
-                }}
-                title="Clear date"
-                className="w-5 h-5 flex items-center justify-center rounded-full text-ink/50 hover:bg-danger/10 hover:text-danger transition-colors"
+                onClick={() => setIsEditingDueDate((v) => !v)}
+                className="inline-flex items-center gap-1 rounded-full bg-stripe-blue/20 px-2 py-0.5 text-[10px] font-semibold text-[#2E6A82] border border-stripe-blue/50 hover:bg-stripe-blue/35 transition-colors"
+                title="Schedule this task"
               >
-                <X size={9} />
+                <Calendar size={10} /> {task.due_date ? formatShortDate(task.due_date) : "Schedule"}
               </button>
-            </div>
-          ) : showScheduleControl ? (
-            <button
-              type="button"
-              onClick={() => setIsEditingDueDate(true)}
-              className="shrink-0 inline-flex items-center gap-1 rounded-full bg-stripe-blue/20 px-2 py-0.5 text-[10px] font-semibold text-[#2E6A82] border border-stripe-blue/50 hover:bg-stripe-blue/35 transition-colors"
-              title="Schedule this task"
-            >
-              <Calendar size={10} /> {task.due_date ? formatShortDate(task.due_date) : "Schedule"}
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={() => setIsEditingDueDate(true)}
-              className="shrink-0 inline-flex items-center gap-1 rounded-full bg-ink/5 px-2 py-0.5 text-[10px] font-medium text-ink/70 border border-ink/10 hover:bg-ink/10 transition-colors"
-              title="Move to another day"
-            >
-              <Folder size={9} /> {task.category || "Inbox"}
-            </button>
-          ))}
+            ) : (
+              <button
+                type="button"
+                onClick={() => setIsEditingDueDate((v) => !v)}
+                className="inline-flex items-center gap-1 rounded-full bg-ink/5 px-2 py-0.5 text-[10px] font-medium text-ink/70 border border-ink/10 hover:bg-ink/10 transition-colors"
+                title="Reschedule this task"
+              >
+                <Folder size={9} /> {task.category || "Inbox"}
+              </button>
+            )}
+            {isEditingDueDate && dueDateDropdown}
+          </div>
+        )}
 
         <div className="hidden sm:flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
           {!task.completed && (
@@ -208,7 +257,11 @@ export default function TaskCard({ task, onStartFocus, compact = false, emphasiz
 
   return (
     <div
+      draggable={draggable && !task.completed}
+      onDragStart={(e) => e.dataTransfer.setData("text/plain", task.id)}
       className={`group relative rounded-2xl bg-white shadow-[0_4px_20px_rgba(0,0,0,0.03)] border-2 p-4 transition-all ${
+        draggable && !task.completed ? "cursor-grab active:cursor-grabbing" : ""
+      } ${
         task.completed
           ? "border-folder-pink/30 bg-folder-pink/10 opacity-70"
           : isUrgent
@@ -279,47 +332,18 @@ export default function TaskCard({ task, onStartFocus, compact = false, emphasiz
               <Clock size={10} /> {task.estimated_minutes}m
             </span>
 
-            {isEditingDueDate ? (
-              <div className="inline-flex items-center gap-0.5 rounded-full bg-stripe-blue/20 border border-stripe-blue/50 px-1 py-0.5">
-                {currentWeek.map((day) => (
-                  <button
-                    key={day.iso}
-                    type="button"
-                    onClick={() => {
-                      setDueDate(task.id, day.iso);
-                      setIsEditingDueDate(false);
-                    }}
-                    title={formatShortDate(day.iso)}
-                    className={`w-5 h-5 flex items-center justify-center rounded-full text-[9px] font-bold transition-colors ${
-                      task.due_date === day.iso ? "bg-ink text-white" : "text-ink/70 hover:bg-ink/10"
-                    }`}
-                  >
-                    {day.weekdayShort.charAt(0)}
-                  </button>
-                ))}
-                <button
-                  type="button"
-                  onClick={() => {
-                    setDueDate(task.id, null);
-                    setIsEditingDueDate(false);
-                  }}
-                  title="Clear date"
-                  className="w-5 h-5 flex items-center justify-center rounded-full text-ink/50 hover:bg-danger/10 hover:text-danger transition-colors"
-                >
-                  <X size={10} />
-                </button>
-              </div>
-            ) : (
+            <div className="relative">
               <button
                 type="button"
-                onClick={() => !task.completed && setIsEditingDueDate(true)}
+                onClick={() => !task.completed && setIsEditingDueDate((v) => !v)}
                 disabled={task.completed}
                 className="inline-flex items-center gap-1 rounded-full bg-stripe-blue/25 px-2 py-0.5 text-[10px] font-medium text-ink border border-stripe-blue/50 hover:bg-stripe-blue/40 transition-colors disabled:opacity-50"
                 title="Schedule this task"
               >
                 <Calendar size={10} /> {task.due_date ? formatShortDate(task.due_date) : "No date"}
               </button>
-            )}
+              {isEditingDueDate && dueDateDropdown}
+            </div>
           </div>
 
           {/* Subtasks Section */}
