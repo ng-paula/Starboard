@@ -75,16 +75,16 @@ const VIEWS: {
   ringClass: string;
 }[] = [
   {
-    id: "Categories",
-    label: "Folders",
-    icon: Folder,
+    id: "Timeline",
+    label: "Timeline",
+    icon: Calendar,
     activeClasses: "bg-ink text-white shadow-sm",
     ringClass: "focus-visible:ring-ink/40",
   },
   {
-    id: "Timeline",
-    label: "Timeline",
-    icon: Calendar,
+    id: "Categories",
+    label: "Folders",
+    icon: Folder,
     activeClasses: "bg-ink text-white shadow-sm",
     ringClass: "focus-visible:ring-ink/40",
   },
