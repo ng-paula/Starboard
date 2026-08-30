@@ -12,6 +12,7 @@ export interface Task {
   id: string;
   title: string;
   completed: boolean;
+  completed_at?: string | null; // full ISO datetime — when it was marked done, set/cleared by toggleTask
   priority: Priority;
   energy_level: EnergyLevel;
   estimated_minutes: number;

@@ -40,7 +40,13 @@ export const useTaskStore = create<TaskState>((set) => ({
   })),
 
   toggleTask: (id) => set((state) => ({
-    tasks: state.tasks.map((t) => t.id === id ? { ...t, completed: !t.completed } : t)
+    tasks: state.tasks.map((t) => {
+      if (t.id !== id) return t;
+      const completed = !t.completed;
+      // Powers the Archive's day-grouping and streak/personal-best stats -
+      // reset on un-complete so a re-finished task gets a fresh timestamp.
+      return { ...t, completed, completed_at: completed ? new Date().toISOString() : null };
+    })
   })),
 
   deleteTask: (id) => set((state) => ({

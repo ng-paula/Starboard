@@ -9,6 +9,7 @@ import {
   Calendar,
   Folder,
   CheckSquare,
+  Check,
   Trash2,
   LayoutGrid,
   Receipt,
@@ -19,7 +20,17 @@ import {
 } from "lucide-react";
 import { useTaskStore } from "@/store/useTaskStore";
 import { useBrainDump } from "@/hooks/useBrainDump";
-import { getWeekDates, toISODate, addDays, formatDayLabel, formatWeekRangeLabel, formatMonthDay } from "@/lib/dates";
+import {
+  getWeekDates,
+  toISODate,
+  addDays,
+  formatDayLabel,
+  formatWeekRangeLabel,
+  formatMonthDay,
+  formatShortDate,
+  formatTime,
+  formatShortWeekdayDate,
+} from "@/lib/dates";
 import type { Task } from "@/lib/types";
 import TaskCard from "./TaskCard";
 import FocusModal from "./FocusModal";
@@ -134,6 +145,9 @@ export default function Dashboard({ onBackToLanding }: DashboardProps) {
   const [newFolderInput, setNewFolderInput] = useState("");
   const [folderTaskInput, setFolderTaskInput] = useState("");
 
+  // Archive (Completed view): how the finished-task list is grouped.
+  const [archiveGroupMode, setArchiveGroupMode] = useState<"day" | "week" | "folder">("day");
+
   // Weekly Timeline: a real Mon-Sun week of dates instead of a vague
   // Today/Tomorrow/Later enum, so tasks land on the actual day they're
   // scheduled for. selectedDay === null means "overview" - the main
@@ -203,6 +217,181 @@ export default function Dashboard({ onBackToLanding }: DashboardProps) {
 
   const todayIso = toISODate(new Date());
   const tomorrowIso = toISODate(addDays(new Date(), 1));
+
+  // --- Archive (Completed view) stats ---
+  // completed_at is what makes all of this possible - without a real
+  // timestamp there's no way to know which day (or week) a completion
+  // belongs to, only that it happened at some point.
+  const completedTasks = useMemo(() => tasks.filter((t) => t.completed && t.completed_at), [tasks]);
+
+  const completedDateCounts = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const t of completedTasks) {
+      const iso = toISODate(new Date(t.completed_at!));
+      map.set(iso, (map.get(iso) || 0) + 1);
+    }
+    return map;
+  }, [completedTasks]);
+
+  const currentStreak = useMemo(() => {
+    let streak = 0;
+    let cursor = new Date();
+    while (completedDateCounts.has(toISODate(cursor))) {
+      streak++;
+      cursor = addDays(cursor, -1);
+    }
+    return streak;
+  }, [completedDateCounts]);
+
+  const last7Days = useMemo(() => {
+    const days: { iso: string; hasActivity: boolean; isToday: boolean }[] = [];
+    for (let i = 6; i >= 0; i--) {
+      const iso = toISODate(addDays(new Date(), -i));
+      days.push({ iso, hasActivity: completedDateCounts.has(iso), isToday: i === 0 });
+    }
+    return days;
+  }, [completedDateCounts]);
+
+  // These are deliberately independent of weekOffset (which only moves
+  // the Timeline calendar) - Archive stats always mean the real current
+  // and previous week.
+  const statsThisWeek = useMemo(() => getWeekDates(0), []);
+  const statsLastWeek = useMemo(() => getWeekDates(-1), []);
+
+  const thisWeekCompleted = useMemo(() => {
+    const isoSet = new Set(statsThisWeek.map((d) => d.iso));
+    return completedTasks.filter((t) => isoSet.has(toISODate(new Date(t.completed_at!))));
+  }, [completedTasks, statsThisWeek]);
+
+  const lastWeekCompleted = useMemo(() => {
+    const isoSet = new Set(statsLastWeek.map((d) => d.iso));
+    return completedTasks.filter((t) => isoSet.has(toISODate(new Date(t.completed_at!))));
+  }, [completedTasks, statsLastWeek]);
+
+  const weekDelta = thisWeekCompleted.length - lastWeekCompleted.length;
+
+  const focusTimeThisWeek = useMemo(
+    () => thisWeekCompleted.reduce((sum, t) => sum + (t.estimated_minutes || 0), 0),
+    [thisWeekCompleted]
+  );
+
+  const busiestDayThisWeek = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const t of thisWeekCompleted) {
+      const weekday = new Date(t.completed_at!).toLocaleDateString(undefined, { weekday: "long" });
+      counts.set(weekday, (counts.get(weekday) || 0) + 1);
+    }
+    let best: { day: string; count: number } | null = null;
+    for (const [day, count] of counts) {
+      if (!best || count > best.count) best = { day, count };
+    }
+    return best;
+  }, [thisWeekCompleted]);
+
+  const topFolderThisWeek = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const t of thisWeekCompleted) {
+      const key = t.category || "Inbox";
+      counts.set(key, (counts.get(key) || 0) + 1);
+    }
+    let best: { folder: string; count: number } | null = null;
+    for (const [folder, count] of counts) {
+      if (!best || count > best.count) best = { folder, count };
+    }
+    return best;
+  }, [thisWeekCompleted]);
+
+  const personalBest = useMemo(() => {
+    let best: { iso: string; count: number } | null = null;
+    for (const [iso, count] of completedDateCounts) {
+      if (!best || count > best.count) best = { iso, count };
+    }
+    return best;
+  }, [completedDateCounts]);
+
+  const thisWeekBestDayCount = busiestDayThisWeek?.count || 0;
+  const archiveTodayCount = completedDateCounts.get(todayIso) || 0;
+
+  // Row meta differs by grouping: Day mode shows the clock time for
+  // today's completions (the date is already the section header) and
+  // falls back to folder + duration for older days; Week/Folder modes
+  // span multiple days per section, so they always show a short date
+  // instead of relying on "today" context.
+  const archiveRowMeta = (t: Task, mode: "day" | "week" | "folder"): string => {
+    if (!t.completed_at) return `${t.estimated_minutes}m`;
+    const iso = toISODate(new Date(t.completed_at));
+    const category = t.category && t.category !== "Inbox" ? t.category : null;
+
+    if (mode === "day") {
+      const tail = iso === todayIso ? formatTime(t.completed_at) : `${t.estimated_minutes}m`;
+      return category ? `${category} · ${tail}` : tail;
+    }
+    if (mode === "week") {
+      const tail = `${formatShortDate(iso)} · ${t.estimated_minutes}m`;
+      return category ? `${category} · ${tail}` : tail;
+    }
+    // folder mode - category is already the section header
+    return `${formatShortDate(iso)} · ${t.estimated_minutes}m`;
+  };
+
+  const archiveGroups = useMemo<{ key: string; label: string; color?: string; tasks: Task[] }[]>(() => {
+    if (activeView !== "Completed") return [];
+
+    if (archiveGroupMode === "folder") {
+      const map = new Map<string, Task[]>();
+      for (const t of completedTasks) {
+        const key = t.category || "Inbox";
+        if (!map.has(key)) map.set(key, []);
+        map.get(key)!.push(t);
+      }
+      return Array.from(map.entries())
+        .map(([key, items]) => ({
+          key,
+          label: key,
+          color: getFolderColor(key),
+          tasks: items.sort((a, b) => (b.completed_at || "").localeCompare(a.completed_at || "")),
+        }))
+        .sort((a, b) => b.tasks.length - a.tasks.length);
+    }
+
+    if (archiveGroupMode === "week") {
+      const map = new Map<string, Task[]>();
+      for (const t of completedTasks) {
+        const monday = getWeekDates(0, new Date(t.completed_at!))[0].iso;
+        if (!map.has(monday)) map.set(monday, []);
+        map.get(monday)!.push(t);
+      }
+      const thisMonday = statsThisWeek[0].iso;
+      const lastMonday = statsLastWeek[0].iso;
+      return Array.from(map.entries())
+        .sort((a, b) => b[0].localeCompare(a[0]))
+        .map(([monday, items]) => ({
+          key: monday,
+          label:
+            monday === thisMonday
+              ? "This Week"
+              : monday === lastMonday
+              ? "Last Week"
+              : formatWeekRangeLabel(getWeekDates(0, new Date(items[0].completed_at!))),
+          tasks: items.sort((a, b) => (b.completed_at || "").localeCompare(a.completed_at || "")),
+        }));
+    }
+
+    // day mode
+    const map = new Map<string, Task[]>();
+    for (const t of completedTasks) {
+      const iso = toISODate(new Date(t.completed_at!));
+      if (!map.has(iso)) map.set(iso, []);
+      map.get(iso)!.push(t);
+    }
+    return Array.from(map.entries())
+      .sort((a, b) => b[0].localeCompare(a[0]))
+      .map(([iso, items]) => ({
+        key: iso,
+        label: iso === todayIso ? `Today · ${formatShortDate(iso)}` : formatShortDate(iso),
+        tasks: items.sort((a, b) => (b.completed_at || "").localeCompare(a.completed_at || "")),
+      }));
+  }, [activeView, archiveGroupMode, completedTasks, statsThisWeek, statsLastWeek, todayIso]);
 
   // Per-date totals (including completed) drive the sidebar calendar dots,
   // the Today/Tomorrow tab badges, and the day-header "X tasks - Y done"
@@ -645,7 +834,7 @@ export default function Dashboard({ onBackToLanding }: DashboardProps) {
         {/* LEFT COLUMN: Add task + progress */}
         <aside className="w-full lg:w-80 flex flex-col gap-6 shrink-0">
           <div className="flex flex-col gap-5 sticky top-24">
-            {activeView !== "Categories" && (
+            {activeView !== "Categories" && activeView !== "Completed" && (
               <div className="bg-white rounded-3xl p-5 shadow-[0_6px_24px_rgba(233,169,194,0.18)] border-2 border-folder-pink/50 flex flex-col gap-2">
                 <form onSubmit={handleAddTask} className="flex flex-col gap-2">
                   <div className="flex items-center justify-between px-1">
@@ -841,7 +1030,7 @@ export default function Dashboard({ onBackToLanding }: DashboardProps) {
               </div>
             )}
 
-            {progressScope.length > 0 && (
+            {activeView !== "Completed" && progressScope.length > 0 && (
               <div className="bg-white rounded-3xl p-5 shadow-[0_6px_24px_rgba(233,169,194,0.18)] border-2 border-folder-pink/50 flex flex-col gap-3">
                 <div className="flex items-center justify-between">
                   <span className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-ink/80">
@@ -864,6 +1053,90 @@ export default function Dashboard({ onBackToLanding }: DashboardProps) {
                     : `${progressScopeCompleted} of ${progressScope.length} done — keep going!`}
                 </p>
               </div>
+            )}
+
+            {activeView === "Completed" && (
+              completedTasks.length === 0 ? (
+                <div className="bg-white rounded-3xl p-5 shadow-[0_6px_24px_rgba(233,169,194,0.18)] border-2 border-folder-pink/50 flex flex-col items-center text-center gap-2">
+                  <Flame size={24} className="text-folder-pink" />
+                  <p className="text-sm font-medium text-ink">No streak yet.</p>
+                  <p className="text-xs text-ink/60">Finish a task to start tracking your stats.</p>
+                </div>
+              ) : (
+                <>
+                  <div className="bg-white rounded-3xl p-5 shadow-[0_6px_24px_rgba(233,169,194,0.18)] border-2 border-folder-pink/50 flex flex-col items-center gap-2 text-center">
+                    <span className="text-[11px] font-semibold uppercase tracking-wide text-ink/80">Current streak</span>
+                    <span className="text-4xl font-bold text-folder-pinkDeep leading-none">{currentStreak}</span>
+                    <span className="text-xs text-ink/60">day{currentStreak === 1 ? "" : "s"} finishing something</span>
+                    <div className="flex items-center gap-1 mt-1">
+                      {last7Days.map((d) => (
+                        <div
+                          key={d.iso}
+                          title={d.iso}
+                          className={`h-4 w-4 rounded-md ${
+                            d.hasActivity ? (d.isToday ? "bg-folder-pinkDeep" : "bg-folder-pink") : "bg-folder-pink/15"
+                          }`}
+                        />
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="bg-white rounded-3xl p-5 shadow-[0_6px_24px_rgba(233,169,194,0.18)] border-2 border-folder-pink/50 flex flex-col gap-2">
+                    <span className="text-[11px] font-semibold uppercase tracking-wide text-ink/80">This week</span>
+                    <div className="flex items-baseline justify-between">
+                      <span className="text-3xl font-bold text-ink leading-none">{thisWeekCompleted.length}</span>
+                      <span className={`text-xs font-semibold ${weekDelta >= 0 ? "text-button-greenDark" : "text-ink/50"}`}>
+                        {weekDelta >= 0 ? "+" : ""}
+                        {weekDelta} vs last week
+                      </span>
+                    </div>
+                    <div className="flex flex-col gap-1.5 pt-1 text-xs">
+                      <div className="flex items-center justify-between">
+                        <span className="text-ink/60">Focus time</span>
+                        <span className="font-semibold text-ink">{formatMinutes(focusTimeThisWeek)}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-ink/60">Busiest day</span>
+                        <span className="font-semibold text-ink">
+                          {busiestDayThisWeek ? `${busiestDayThisWeek.day} · ${busiestDayThisWeek.count}` : "—"}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-ink/60">Top folder</span>
+                        <span className="font-semibold text-ink">
+                          {topFolderThisWeek ? `${topFolderThisWeek.folder} · ${topFolderThisWeek.count}` : "—"}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {personalBest && (
+                    <div className="bg-white rounded-3xl p-5 shadow-[0_6px_24px_rgba(233,169,194,0.18)] border-2 border-folder-pink/50 flex flex-col gap-2">
+                      <span className="text-[11px] font-semibold uppercase tracking-wide text-ink/80">Personal best</span>
+                      <p className="text-sm text-ink">
+                        <span className="font-bold">
+                          {personalBest.count} task{personalBest.count === 1 ? "" : "s"}
+                        </span>{" "}
+                        in one day — {formatShortWeekdayDate(personalBest.iso)}.
+                        {thisWeekBestDayCount < personalBest.count && (
+                          <>
+                            {" "}
+                            You're <span className="font-semibold">{personalBest.count - thisWeekBestDayCount}</span> away this week.
+                          </>
+                        )}
+                      </p>
+                      <div className="h-2 w-full bg-folder-pink/20 rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-gradient-to-r from-folder-pink to-folder-pinkDeep rounded-full transition-all duration-500"
+                          style={{
+                            width: `${personalBest.count === 0 ? 0 : Math.min(100, Math.round((thisWeekBestDayCount / personalBest.count) * 100))}%`,
+                          }}
+                        />
+                      </div>
+                    </div>
+                  )}
+                </>
+              )
             )}
           </div>
         </aside>
@@ -947,6 +1220,29 @@ export default function Dashboard({ onBackToLanding }: DashboardProps) {
                     <Receipt size={14} /> Print Agenda
                   </button>
                 )}
+                {activeView === "Completed" && (
+                  <>
+                    <button
+                      onClick={() => setReceiptPayload({ tasks: displayedTasks, title: "Starboard" })}
+                      disabled={displayedTasks.length === 0}
+                      className="flex items-center gap-1.5 px-3.5 py-1.5 bg-white border border-ink/15 hover:bg-ink/5 text-ink rounded-xl text-xs font-semibold transition-colors disabled:opacity-50 shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/30"
+                    >
+                      <Receipt size={14} /> Export Receipt
+                    </button>
+                    <button
+                      onClick={handleClearCompleted}
+                      disabled={displayedTasks.length === 0}
+                      aria-label={confirmingClear ? "Confirm clear all completed tasks" : "Clear all completed tasks"}
+                      className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-colors disabled:opacity-50 shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger/40 ${
+                        confirmingClear
+                          ? "bg-danger text-white border border-danger"
+                          : "bg-white border border-danger/30 text-danger hover:bg-danger/10"
+                      }`}
+                    >
+                      <Trash2 size={14} /> {confirmingClear ? "Confirm Clear?" : "Clear All"}
+                    </button>
+                  </>
+                )}
                 {activeView !== "Completed" && (
                   <button
                     onClick={handleOptimizeFlow}
@@ -1027,30 +1323,22 @@ export default function Dashboard({ onBackToLanding }: DashboardProps) {
             )}
 
             {activeView === "Completed" && (
-              <div className="flex items-center justify-between bg-ink/5 p-3 rounded-2xl border border-ink/10">
+              <div className="flex items-center justify-between flex-wrap gap-3 bg-ink/5 p-3 rounded-2xl border border-ink/10">
                 <span className="text-sm font-medium text-ink/80">
-                  You've finished {displayedTasks.length} task{displayedTasks.length === 1 ? "" : "s"}!
+                  {completedTasks.length} task{completedTasks.length === 1 ? "" : "s"} finished all time · {archiveTodayCount} today
                 </span>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => setReceiptPayload({ tasks: displayedTasks, title: "Starboard" })}
-                    disabled={displayedTasks.length === 0}
-                    className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-ink/15 text-ink hover:bg-ink/5 rounded-lg text-xs font-semibold transition-colors disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/30"
-                  >
-                    <Receipt size={14} /> Export Receipt
-                  </button>
-                  <button
-                    onClick={handleClearCompleted}
-                    disabled={displayedTasks.length === 0}
-                    aria-label={confirmingClear ? "Confirm clear all completed tasks" : "Clear all completed tasks"}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger/40 ${
-                      confirmingClear
-                        ? "bg-danger text-white border border-danger"
-                        : "bg-white border border-danger/30 text-danger hover:bg-danger/10"
-                    }`}
-                  >
-                    <Trash2 size={14} /> {confirmingClear ? "Confirm Clear?" : "Clear All"}
-                  </button>
+                <div className="flex items-center gap-1 rounded-full bg-white p-1 border border-ink/10">
+                  {(["day", "week", "folder"] as const).map((mode) => (
+                    <button
+                      key={mode}
+                      onClick={() => setArchiveGroupMode(mode)}
+                      className={`px-3 py-1 rounded-full text-xs font-semibold capitalize transition-colors ${
+                        archiveGroupMode === mode ? "bg-ink text-white" : "text-ink/60 hover:text-ink"
+                      }`}
+                    >
+                      {mode}
+                    </button>
+                  ))}
                 </div>
               </div>
             )}
@@ -1144,6 +1432,43 @@ export default function Dashboard({ onBackToLanding }: DashboardProps) {
                   </div>
                 )}
               </>
+            ) : activeView === "Completed" ? (
+              archiveGroups.length === 0 ? (
+                emptyStateBlock
+              ) : (
+                <div className="flex flex-col gap-5">
+                  {archiveGroups.map((group) => (
+                    <div key={group.key} className="flex flex-col gap-1">
+                      <div className="flex items-center gap-2 px-1 pb-1">
+                        {archiveGroupMode === "folder" && (
+                          <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: group.color }} />
+                        )}
+                        <span className="text-[11px] font-bold uppercase tracking-wide text-folder-pinkDeep">{group.label}</span>
+                        <span className="text-[11px] text-ink/40 font-medium">{group.tasks.length}</span>
+                        <div className="flex-1 h-px bg-folder-pink/25" />
+                      </div>
+                      <div className="flex flex-col gap-1">
+                        {group.tasks.map((task) => (
+                          <div
+                            key={task.id}
+                            className="group flex items-center gap-2.5 py-2 px-2.5 rounded-xl hover:bg-folder-pink/10 transition-colors"
+                          >
+                            <button
+                              onClick={() => toggleTask(task.id)}
+                              title="Mark as not done"
+                              className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 border-button-greenDeep bg-button-greenDeep text-white"
+                            >
+                              <Check size={9} strokeWidth={3} />
+                            </button>
+                            <span className="flex-1 min-w-0 truncate text-sm text-ink/60 line-through">{task.title}</span>
+                            <span className="shrink-0 text-xs text-ink/40">{archiveRowMeta(task, archiveGroupMode)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )
             ) : displayedTasks.length === 0 ? (
               emptyStateBlock
             ) : (

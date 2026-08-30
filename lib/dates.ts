@@ -74,3 +74,17 @@ export function formatMonthDay(iso: string): string {
   const date = new Date(y, m - 1, d);
   return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
+
+// "9:42" - 24h, no leading zero on the hour, no seconds. Takes a full
+// ISO datetime (Task.completed_at), not a date-only string.
+export function formatTime(isoDatetime: string): string {
+  const date = new Date(isoDatetime);
+  return `${date.getHours()}:${String(date.getMinutes()).padStart(2, "0")}`;
+}
+
+// "Aug 15" with weekday - "Fri, Aug 15" - used for Personal Best.
+export function formatShortWeekdayDate(iso: string): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  const date = new Date(y, m - 1, d);
+  return date.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+}
