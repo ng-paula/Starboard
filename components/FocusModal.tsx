@@ -121,20 +121,17 @@ export default function FocusModal({
     setIsStuckLoading(true);
     setStuckTip(null);
     try {
-      const prompt = `Give a high-impact, single-sentence 30-second micro-action to overcome procrastination and immediately start working on this task: "${task.title}". Keep it punchy, practical, and under 25 words.`;
-      const res = await fetch("/api/parse", {
+      const res = await fetch("/api/stuck", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt }),
+        body: JSON.stringify({ title: task.title }),
       });
 
-      if (res.ok) {
-        const data = await res.json();
-        if (data.tasks && data.tasks.length > 0) {
-          setStuckTip(`👉 ${data.tasks[0].title}`);
-        } else {
-          setStuckTip(`👉 Open your tools and write down just the very first sentence without judging quality.`);
-        }
+      const data = await res.json();
+      if (res.ok && data.tip) {
+        setStuckTip(`👉 ${data.tip}`);
+      } else {
+        setStuckTip(`👉 Open your tools and write down just the very first sentence without judging quality.`);
       }
     } catch (err) {
       setStuckTip(`👉 Open your workspace and take 1 small action right now.`);
