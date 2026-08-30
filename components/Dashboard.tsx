@@ -189,8 +189,17 @@ export default function Dashboard({ onBackToLanding }: DashboardProps) {
   }, [tasks]);
 
   const pendingTasks = useMemo(() => tasks.filter((t) => !t.completed), [tasks]);
-  const completedCount = tasks.length - pendingTasks.length;
-  const progressPct = tasks.length === 0 ? 0 : Math.round((completedCount / tasks.length) * 100);
+
+  // Progress card: scoped to whichever folder is open, so it answers
+  // "how am I doing on THIS folder" instead of always showing the global
+  // total. "All tasks" (or any other view) still shows the global figure.
+  const progressScope = useMemo(
+    () => (activeView === "Categories" && activeCategory !== "All" ? tasks.filter((t) => t.category === activeCategory) : tasks),
+    [tasks, activeView, activeCategory]
+  );
+  const progressScopeCompleted = progressScope.filter((t) => t.completed).length;
+  const progressScopePct = progressScope.length === 0 ? 0 : Math.round((progressScopeCompleted / progressScope.length) * 100);
+  const isFolderScopedProgress = activeView === "Categories" && activeCategory !== "All";
 
   const todayIso = toISODate(new Date());
   const tomorrowIso = toISODate(addDays(new Date(), 1));
@@ -832,24 +841,27 @@ export default function Dashboard({ onBackToLanding }: DashboardProps) {
               </div>
             )}
 
-            {tasks.length > 0 && (
+            {progressScope.length > 0 && (
               <div className="bg-white rounded-3xl p-5 shadow-[0_6px_24px_rgba(233,169,194,0.18)] border-2 border-folder-pink/50 flex flex-col gap-3">
                 <div className="flex items-center justify-between">
                   <span className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-ink/80">
-                    <Flame size={12} className="text-folder-pinkDeep" /> Today's progress
+                    <Flame size={12} className="text-folder-pinkDeep" />
+                    {isFolderScopedProgress ? `${activeCategory} progress` : "Today's progress"}
                   </span>
-                  <span className="text-2xl font-bold text-folder-pinkDeep leading-none">{progressPct}%</span>
+                  <span className="text-2xl font-bold text-folder-pinkDeep leading-none">{progressScopePct}%</span>
                 </div>
                 <div className="h-3 w-full bg-folder-pink/20 rounded-full overflow-hidden">
                   <div
                     className="h-full bg-gradient-to-r from-folder-pink to-folder-pinkDeep rounded-full transition-all duration-500"
-                    style={{ width: `${progressPct}%` }}
+                    style={{ width: `${progressScopePct}%` }}
                   />
                 </div>
                 <p className="text-xs text-ink/80">
-                  {completedCount === 0
-                    ? "Finish your first task to get the ball rolling."
-                    : `${completedCount} of ${tasks.length} done — keep going!`}
+                  {progressScopeCompleted === 0
+                    ? isFolderScopedProgress
+                      ? `Finish your first ${activeCategory} task to get the ball rolling.`
+                      : "Finish your first task to get the ball rolling."
+                    : `${progressScopeCompleted} of ${progressScope.length} done — keep going!`}
                 </p>
               </div>
             )}
