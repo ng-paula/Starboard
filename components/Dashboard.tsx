@@ -16,6 +16,7 @@ import {
   Flame,
   ChevronLeft,
   ChevronRight,
+  LogOut,
   type LucideIcon,
 } from "lucide-react";
 import { useTaskStore } from "@/store/useTaskStore";
@@ -61,6 +62,8 @@ function formatMinutes(mins: number): string {
 
 interface DashboardProps {
   onBackToLanding: () => void;
+  onSignOut: () => void;
+  userEmail: string | null;
 }
 
 type ViewMode = "Categories" | "Timeline" | "Completed";
@@ -108,7 +111,7 @@ const VIEWS: {
   },
 ];
 
-export default function Dashboard({ onBackToLanding }: DashboardProps) {
+export default function Dashboard({ onBackToLanding, onSignOut, userEmail }: DashboardProps) {
   const {
     tasks,
     customCategories,
@@ -845,6 +848,14 @@ export default function Dashboard({ onBackToLanding }: DashboardProps) {
               className="flex items-center gap-1.5 px-3.5 py-2 rounded-full bg-button-greenDeep hover:bg-button-greenDark text-white text-xs font-bold shadow-sm transition-all active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-button-greenDeep/50"
             >
               <Zap size={14} className="fill-current" /> <span className="hidden sm:inline">What Now?</span>
+            </button>
+            <button
+              onClick={onSignOut}
+              title={userEmail ? `Sign out of ${userEmail}` : "Sign out"}
+              aria-label="Sign out"
+              className="flex items-center justify-center p-2 rounded-full bg-white/60 hover:bg-white text-ink transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/30"
+            >
+              <LogOut size={14} />
             </button>
           </div>
         </div>
