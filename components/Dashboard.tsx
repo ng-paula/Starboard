@@ -123,6 +123,10 @@ export default function Dashboard({ onBackToLanding, onSignOut, userEmail }: Das
     moveCategory,
     renameCategory,
     addCategory,
+    loadTasks,
+    isLoading,
+    syncError,
+    clearSyncError,
   } = useTaskStore();
   const { parseText, isLoadingAi } = useBrainDump();
 
@@ -495,6 +499,23 @@ export default function Dashboard({ onBackToLanding, onSignOut, userEmail }: Das
     }, 3200);
   }, []);
 
+  // --- Load this user's tasks from Supabase once, on mount ---
+  useEffect(() => {
+    loadTasks();
+    // Deliberately empty deps - loadTasks reads the current session
+    // itself and this should only ever run once when the Dashboard first
+    // mounts, not on every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // --- Surface background sync failures (the store has no toast system
+  // of its own) without letting the same failure toast forever ---
+  useEffect(() => {
+    if (!syncError) return;
+    pushToast(syncError, "error");
+    clearSyncError();
+  }, [syncError, pushToast, clearSyncError]);
+
   // --- Cycle AI loading messages while parsing ---
   useEffect(() => {
     if (!isLoadingAi) {
@@ -790,6 +811,17 @@ export default function Dashboard({ onBackToLanding, onSignOut, userEmail }: Das
         };
       }
     }
+  }
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen w-full flex items-center justify-center" style={{ backgroundColor: "#FDF7EE" }}>
+        <div className="flex items-center gap-2 text-ink/60 text-sm font-medium">
+          <Sparkles size={16} className="animate-spin text-folder-pinkDeep" />
+          Loading your tasks...
+        </div>
+      </div>
+    );
   }
 
   return (

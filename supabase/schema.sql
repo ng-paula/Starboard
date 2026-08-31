@@ -26,6 +26,14 @@ create table if not exists public.tasks (
   created_at timestamptz not null default now()
 );
 
+-- CREATE TABLE IF NOT EXISTS won't retroactively add a column to a table
+-- that already exists (from an earlier run of this file) - this line is
+-- what actually adds sort_order if you ran this schema before Phase 3.
+-- Persists the order Optimize Flow (and everyday drag/reordering) puts
+-- tasks in, so a refresh doesn't silently reset everything back to
+-- whatever order the database happens to return rows in.
+alter table public.tasks add column if not exists sort_order integer not null default 0;
+
 create index if not exists tasks_user_id_idx on public.tasks(user_id);
 
 -- ── categories ──────────────────────────────────────────────────────────
