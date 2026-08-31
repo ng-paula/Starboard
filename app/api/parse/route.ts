@@ -23,7 +23,9 @@ export async function POST(req: Request) {
     const ai = new GoogleGenAI({ apiKey });
     const { prompt } = await req.json();
 
-    if (!prompt) return NextResponse.json({ error: "Prompt is required" }, { status: 400 });
+    if (!prompt || typeof prompt !== "string" || !prompt.trim()) {
+      return NextResponse.json({ error: "Prompt is required" }, { status: 400 });
+    }
 
     const response = await ai.models.generateContent({
       model: "gemini-3.6-flash",

@@ -15,11 +15,23 @@ function dueHintToDate(hint: string | null | undefined): string | null {
   return null;
 }
 
+// Gemini reliably returns { tasks: [] } for input with nothing actionable
+// in it (gibberish, "asdf", whitespace) rather than fabricating a task -
+// verified directly against the live endpoint. So "valid response, zero
+// tasks" is a real, expected outcome, not a failure - but it's also not
+// the same thing as success, and the caller needs to tell them apart:
+// clearing the input and showing a success toast for a no-op response
+// would be actively misleading.
+export type ParseTextResult =
+  | { status: "success"; count: number }
+  | { status: "empty" }
+  | { status: "error"; message: string };
+
 export function useBrainDump() {
   const [isLoadingAi, setIsLoadingAi] = useState(false);
   const addMultipleTasks = useTaskStore((state) => state.addMultipleTasks);
 
-  const parseText = async (rawText: string) => {
+  const parseText = async (rawText: string): Promise<ParseTextResult> => {
     setIsLoadingAi(true);
     try {
       const res = await fetch("/api/parse", {
@@ -29,13 +41,22 @@ export function useBrainDump() {
       });
       const data = await res.json();
 
-      if (!res.ok) throw new Error(data.error || "Failed to parse");
+      if (!res.ok) {
+        return { status: "error", message: data.error || "Failed to parse that." };
+      }
 
-      // Because we are adding Zod on the backend, we can trust this data structure
-      if (data.tasks && Array.isArray(data.tasks)) {
-        const formatted = data.tasks.map((t: any) => ({
+      if (!data.tasks || !Array.isArray(data.tasks)) {
+        return { status: "error", message: "Got back something unexpected." };
+      }
+
+      // Defensive filter: the schema allows an empty string title, and a
+      // blank task card helps no one - drop anything with no real title
+      // rather than silently add it.
+      const formatted = data.tasks
+        .filter((t: any) => typeof t.title === "string" && t.title.trim().length > 0)
+        .map((t: any) => ({
           id: crypto.randomUUID(),
-          title: t.title,
+          title: t.title.trim(),
           completed: false,
           priority: t.priority,
           energy_level: t.energy_level,
@@ -45,13 +66,14 @@ export function useBrainDump() {
           subtasks: []
         }));
 
-        addMultipleTasks(formatted);
-        return true; // Indicates success
+      if (formatted.length === 0) {
+        return { status: "empty" };
       }
-      return false;
+
+      addMultipleTasks(formatted);
+      return { status: "success", count: formatted.length };
     } catch (err: any) {
-      alert(`AI Error: ${err.message}`);
-      return false;
+      return { status: "error", message: err?.message || "Couldn't reach the AI right now." };
     } finally {
       setIsLoadingAi(false);
     }

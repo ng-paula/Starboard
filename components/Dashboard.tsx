@@ -488,8 +488,8 @@ export default function Dashboard({ onBackToLanding }: DashboardProps) {
     if (!inputVal.trim()) return;
 
     if (isSparkleMode) {
-      const success = await parseText(inputVal);
-      if (success) {
+      const result = await parseText(inputVal);
+      if (result.status === "success") {
         setInputVal("");
         setIsSparkleMode(false);
         // Most brain-dumped tasks land Unscheduled (the AI only assigns
@@ -498,9 +498,15 @@ export default function Dashboard({ onBackToLanding }: DashboardProps) {
         // one-click "Schedule" control lives to finish the job.
         setActiveView("Timeline");
         setSelectedDay(UNSCHEDULED);
-        pushToast("Tasks organized from your brain dump.", "success");
+        pushToast(`Added ${result.count} task${result.count === 1 ? "" : "s"} from your brain dump.`, "success");
+      } else if (result.status === "empty") {
+        // A valid, empty response (gibberish, "asdf", pure whitespace) -
+        // not an error, but reporting success here would be a lie: nothing
+        // was added. Input is deliberately left in place so the user can
+        // revise and resubmit instead of losing what they typed.
+        pushToast("Didn't find any tasks in that — try describing what you need to do.", "info");
       } else {
-        pushToast("Couldn't parse that — try rephrasing.", "error");
+        pushToast(`Couldn't parse that — ${result.message}`, "error");
       }
     } else {
       addTask({
