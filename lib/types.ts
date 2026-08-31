@@ -5,7 +5,6 @@ export interface Subtask {
   id: string;
   title: string;
   completed: boolean;
-  estimated_minutes?: number;
 }
 
 export interface Task {
@@ -18,7 +17,5 @@ export interface Task {
   estimated_minutes: number;
   category?: string; // <-- ADD THIS LINE
   due_date?: string | null; // ISO "YYYY-MM-DD" — the actual scheduled day, or null if unscheduled
-  scheduled_time?: string | null;
-  starter_tip?: string | null;
   subtasks: Subtask[];
 }
