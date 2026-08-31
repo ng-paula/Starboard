@@ -214,6 +214,27 @@ export default function Dashboard({ onBackToLanding }: DashboardProps) {
   const todayIso = toISODate(new Date());
   const tomorrowIso = toISODate(addDays(new Date(), 1));
 
+  // What Optimize Flow actually operates on. For a Folder, that's the
+  // folder's own pending tasks (which can legitimately span many due
+  // dates - that's what the day-grouping in handleOptimizeFlow is for).
+  // For Timeline, this narrows to whatever single day is selected -
+  // Today, Tomorrow, Unscheduled, or a picked day - matching what's on
+  // screen, instead of silently pulling in every pending task regardless
+  // of date. selectedDay === null (Overview) is the one case with no
+  // single day to narrow to; the button is hidden there entirely rather
+  // than falling back to "everything," since that's exactly the
+  // multi-day-fan-out shape that risks bursting the API's per-minute
+  // rate limit.
+  const optimizeScope = useMemo(() => {
+    if (activeView === "Categories" && activeCategory !== "All") {
+      return pendingTasks.filter((t) => t.category === activeCategory);
+    }
+    if (activeView === "Timeline" && selectedDay !== null) {
+      return pendingTasks.filter((t) => (selectedDay === UNSCHEDULED ? !t.due_date : t.due_date === selectedDay));
+    }
+    return pendingTasks;
+  }, [pendingTasks, activeView, activeCategory, selectedDay]);
+
   // Progress card: scoped to whichever folder is open (so it answers "how
   // am I doing on THIS folder"), or to just today's tasks while on
   // Timeline (the card is literally labeled "Today's progress" - it
@@ -579,14 +600,6 @@ export default function Dashboard({ onBackToLanding }: DashboardProps) {
     // while the first request is still in flight - fires before the
     // isOptimizing state update has re-rendered and disabled the button.
     if (isOptimizingRef.current) return;
-
-    // Optimizing from inside a specific folder only reorders that
-    // folder's own tasks, matching the per-folder "Optimize Flow" button
-    // shown in the Folder Rail header.
-    const optimizeScope =
-      activeView === "Categories" && activeCategory !== "All"
-        ? pendingTasks.filter((t) => t.category === activeCategory)
-        : pendingTasks;
 
     if (optimizeScope.length <= 1) {
       pushToast("Add a few more tasks first to optimize your flow!", "info");
@@ -1296,15 +1309,10 @@ export default function Dashboard({ onBackToLanding }: DashboardProps) {
                     </button>
                   </>
                 )}
-                {activeView !== "Completed" && (
+                {activeView !== "Completed" && !(activeView === "Timeline" && selectedDay === null) && (
                   <button
                     onClick={handleOptimizeFlow}
-                    disabled={
-                      isOptimizing ||
-                      (activeView === "Categories" && activeCategory !== "All"
-                        ? (categoryCounts.get(activeCategory) || 0) <= 1
-                        : pendingTasks.length <= 1)
-                    }
+                    disabled={isOptimizing || optimizeScope.length <= 1}
                     aria-label="Optimize task flow order"
                     className="flex items-center gap-1.5 px-3.5 py-1.5 bg-folder-pink/20 hover:bg-folder-pink/35 text-ink rounded-xl text-xs font-semibold transition-colors disabled:opacity-40 disabled:hover:bg-folder-pink/20 border border-folder-pink/50 shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-folder-pinkDeep/40"
                   >
