@@ -126,6 +126,13 @@ export default function Dashboard({ onBackToLanding }: DashboardProps) {
   const [inputVal, setInputVal] = useState("");
   const [isSparkleMode, setIsSparkleMode] = useState(false);
   const [isOptimizing, setIsOptimizing] = useState(false);
+  // Synchronous re-entrancy guard for Optimize Flow. isOptimizing (state)
+  // is what disables the button visually, but state updates are async -
+  // a ref is checked and set immediately, closing the gap where a second
+  // click (e.g. switching to another view and clicking its own Optimize
+  // Flow button before the first click's re-render lands) could kick off
+  // a second overlapping request.
+  const isOptimizingRef = useRef(false);
   const [focusedTaskId, setFocusedTaskId] = useState<string | null>(null);
   const [focusReason, setFocusReason] = useState<string | null>(null);
   const [receiptPayload, setReceiptPayload] = useState<{ tasks: Task[]; title: string } | null>(null);
@@ -204,19 +211,23 @@ export default function Dashboard({ onBackToLanding }: DashboardProps) {
 
   const pendingTasks = useMemo(() => tasks.filter((t) => !t.completed), [tasks]);
 
-  // Progress card: scoped to whichever folder is open, so it answers
-  // "how am I doing on THIS folder" instead of always showing the global
-  // total. "All tasks" (or any other view) still shows the global figure.
-  const progressScope = useMemo(
-    () => (activeView === "Categories" && activeCategory !== "All" ? tasks.filter((t) => t.category === activeCategory) : tasks),
-    [tasks, activeView, activeCategory]
-  );
-  const progressScopeCompleted = progressScope.filter((t) => t.completed).length;
-  const progressScopePct = progressScope.length === 0 ? 0 : Math.round((progressScopeCompleted / progressScope.length) * 100);
-  const isFolderScopedProgress = activeView === "Categories" && activeCategory !== "All";
-
   const todayIso = toISODate(new Date());
   const tomorrowIso = toISODate(addDays(new Date(), 1));
+
+  // Progress card: scoped to whichever folder is open (so it answers "how
+  // am I doing on THIS folder"), or to just today's tasks while on
+  // Timeline (the card is literally labeled "Today's progress" - it
+  // shouldn't silently mean "all tasks, ever" while looking at Timeline).
+  // "All tasks" in Categories, or any other view, still shows the global
+  // figure.
+  const isFolderScopedProgress = activeView === "Categories" && activeCategory !== "All";
+  const progressScope = useMemo(() => {
+    if (isFolderScopedProgress) return tasks.filter((t) => t.category === activeCategory);
+    if (activeView === "Timeline") return tasks.filter((t) => t.due_date === todayIso);
+    return tasks;
+  }, [tasks, activeView, activeCategory, isFolderScopedProgress, todayIso]);
+  const progressScopeCompleted = progressScope.filter((t) => t.completed).length;
+  const progressScopePct = progressScope.length === 0 ? 0 : Math.round((progressScopeCompleted / progressScope.length) * 100);
 
   // --- Archive (Completed view) stats ---
   // completed_at is what makes all of this possible - without a real
@@ -556,9 +567,16 @@ export default function Dashboard({ onBackToLanding }: DashboardProps) {
   };
 
   const handleOptimizeFlow = async () => {
+    // Synchronous guard: closes the race where a second click - possibly
+    // the same button clicked twice fast, or a *different* Optimize Flow
+    // button after switching from Timeline to Folders (or vice versa)
+    // while the first request is still in flight - fires before the
+    // isOptimizing state update has re-rendered and disabled the button.
+    if (isOptimizingRef.current) return;
+
     // Optimizing from inside a specific folder only reorders that
-    // folder's own tasks, matching the per-folder "Optimize Flow"
-    // button shown in the Folder Rail header.
+    // folder's own tasks, matching the per-folder "Optimize Flow" button
+    // shown in the Folder Rail header.
     const optimizeScope =
       activeView === "Categories" && activeCategory !== "All"
         ? pendingTasks.filter((t) => t.category === activeCategory)
@@ -569,31 +587,58 @@ export default function Dashboard({ onBackToLanding }: DashboardProps) {
       return;
     }
 
+    // Tasks that already have a scheduled day should only be reordered
+    // against other tasks on that SAME day - flattening every day into
+    // one sequence and asking the AI to sort it risks it interleaving
+    // Tuesday's tasks in among Friday's. Group by due_date (unscheduled
+    // tasks form their own group) and optimize each day independently.
+    const dayGroups = new Map<string, Task[]>();
+    for (const t of optimizeScope) {
+      const key = t.due_date || UNSCHEDULED;
+      if (!dayGroups.has(key)) dayGroups.set(key, []);
+      dayGroups.get(key)!.push(t);
+    }
+    const groupEntries = Array.from(dayGroups.values());
+    const optimizableGroups = groupEntries.filter((g) => g.length > 1);
+    const singleTaskLeftovers = groupEntries.filter((g) => g.length <= 1).flat();
+
+    if (optimizableGroups.length === 0) {
+      pushToast("Add a few more tasks on the same day to optimize your flow!", "info");
+      return;
+    }
+
+    isOptimizingRef.current = true;
     setIsOptimizing(true);
     try {
-      // Only the in-scope tasks need reordering - anything outside that
-      // scope (completed tasks, or other folders' tasks when scoped) has
-      // nothing to gain from the round trip and would just be an
-      // unnecessary chunk of the request payload.
-      const res = await fetch("/api/optimize", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tasks: optimizeScope }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
+      const results = await Promise.all(
+        optimizableGroups.map(async (group) => {
+          const res = await fetch("/api/optimize", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ tasks: group }),
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || "Optimization failed");
+          return data.tasks as Task[];
+        })
+      );
 
-      if (data.tasks) {
-        // reorderTasks fully replaces the store's task array, so anything
-        // left out of the request has to be reattached here or it vanishes.
-        const optimizedIds = new Set(data.tasks.map((t: Task) => t.id));
-        const rest = tasks.filter((t) => !optimizedIds.has(t.id));
-        reorderTasks([...data.tasks, ...rest]);
-        pushToast("Flow optimized.", "success");
-      }
+      const optimizedFlat = results.flat();
+      const handledIds = new Set([...optimizedFlat, ...singleTaskLeftovers].map((t) => t.id));
+
+      // Read the store directly instead of the `tasks` closed over at
+      // click time - the request can take a few seconds, and nothing else
+      // disables the rest of the UI while it's in flight. If the user
+      // added, deleted, or refiled a task in the meantime, merging
+      // against a stale snapshot would silently discard that change.
+      const latestTasks = useTaskStore.getState().tasks;
+      const rest = latestTasks.filter((t) => !handledIds.has(t.id));
+      reorderTasks([...optimizedFlat, ...singleTaskLeftovers, ...rest]);
+      pushToast("Flow optimized.", "success");
     } catch (err: any) {
       pushToast(`Optimization error: ${err.message}`, "error");
     } finally {
+      isOptimizingRef.current = false;
       setIsOptimizing(false);
     }
   };
@@ -1049,6 +1094,8 @@ export default function Dashboard({ onBackToLanding }: DashboardProps) {
                   {progressScopeCompleted === 0
                     ? isFolderScopedProgress
                       ? `Finish your first ${activeCategory} task to get the ball rolling.`
+                      : activeView === "Timeline"
+                      ? "Finish your first task of the day to get the ball rolling."
                       : "Finish your first task to get the ball rolling."
                     : `${progressScopeCompleted} of ${progressScope.length} done — keep going!`}
                 </p>

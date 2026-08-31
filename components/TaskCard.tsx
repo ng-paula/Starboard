@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useMemo, useRef } from "react";
-import { Check, Sparkles, Play, Trash2, Clock, Zap, ChevronDown, ChevronUp, Plus, Calendar, Folder } from "lucide-react";
+import { Check, Play, Trash2, Clock, Zap, ChevronDown, ChevronUp, Plus, Calendar, Folder } from "lucide-react";
 import type { Task } from "@/lib/types";
 import { useTaskStore } from "@/store/useTaskStore";
 import { formatShortDate, toISODate, addDays } from "@/lib/dates";
@@ -30,8 +30,8 @@ export default function TaskCard({ task, onStartFocus, compact = false, emphasiz
     addSubtaskManual,
     moveCategory,
     setDueDate,
-    setTasksBreakingDown,
-    updateTaskSubtasks
+    updateTaskTitle,
+    setEstimatedMinutes,
   } = useTaskStore();
 
   const [isExpanded, setIsExpanded] = useState(false);
@@ -40,6 +40,12 @@ export default function TaskCard({ task, onStartFocus, compact = false, emphasiz
 
   const [isEditingCategory, setIsEditingCategory] = useState(false);
   const [categoryInput, setCategoryInput] = useState(task.category || "Inbox");
+
+  const [isEditingTitle, setIsEditingTitle] = useState(false);
+  const [titleInput, setTitleInput] = useState(task.title);
+
+  const [isEditingMinutes, setIsEditingMinutes] = useState(false);
+  const [minutesInput, setMinutesInput] = useState(String(task.estimated_minutes));
 
   const [isEditingDueDate, setIsEditingDueDate] = useState(false);
   const todayIso = toISODate(new Date());
@@ -119,32 +125,26 @@ export default function TaskCard({ task, onStartFocus, compact = false, emphasiz
     setIsEditingCategory(false);
   };
 
-  // 2. We moved the Breakdown API call here to keep the Dashboard clean
-  const handleBreakdown = async () => {
-    setTasksBreakingDown(task.id, true);
-    try {
-      const res = await fetch("/api/breakdown", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title: task.title }),
-      });
-      const data = await res.json();
-      
-      if (data.subtasks && Array.isArray(data.subtasks)) {
-        const formattedSubtasks = data.subtasks.map((sub: any) => ({
-          id: crypto.randomUUID(),
-          title: typeof sub === "string" ? sub : sub.title,
-          completed: false,
-        }));
-        updateTaskSubtasks(task.id, formattedSubtasks);
-        setIsExpanded(true); // Auto-expand to show the new steps
-      } else {
-        setTasksBreakingDown(task.id, false);
-      }
-    } catch (err) {
-      console.error("Breakdown failed:", err);
-      setTasksBreakingDown(task.id, false);
+  const handleTitleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const trimmed = titleInput.trim();
+    if (trimmed) {
+      updateTaskTitle(task.id, trimmed);
+    } else {
+      setTitleInput(task.title);
     }
+    setIsEditingTitle(false);
+  };
+
+  const handleMinutesSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const parsed = parseInt(minutesInput, 10);
+    if (!isNaN(parsed) && parsed > 0) {
+      setEstimatedMinutes(task.id, parsed);
+    } else {
+      setMinutesInput(String(task.estimated_minutes));
+    }
+    setIsEditingMinutes(false);
   };
 
   // Real dropdown (Today / Tomorrow / rest of this week / clear) instead
@@ -208,9 +208,35 @@ export default function TaskCard({ task, onStartFocus, compact = false, emphasiz
           <Check size={9} strokeWidth={3} />
         </button>
 
-        <span className={`flex-1 min-w-0 truncate text-sm ${task.completed ? "text-ink/50 line-through" : "text-ink"}`}>
-          {task.title}
-        </span>
+        {isEditingTitle ? (
+          <form onSubmit={handleTitleSubmit} className="flex-1 min-w-0">
+            <input
+              autoFocus
+              value={titleInput}
+              onChange={(e) => setTitleInput(e.target.value)}
+              onBlur={handleTitleSubmit}
+              onKeyDown={(e) => {
+                if (e.key === "Escape") {
+                  setTitleInput(task.title);
+                  setIsEditingTitle(false);
+                }
+              }}
+              className="w-full bg-transparent text-sm text-ink outline-none border-b border-folder-pinkDeep"
+            />
+          </form>
+        ) : (
+          <span
+            onDoubleClick={() => {
+              if (task.completed) return;
+              setTitleInput(task.title);
+              setIsEditingTitle(true);
+            }}
+            title="Double-click to edit"
+            className={`flex-1 min-w-0 truncate text-sm ${task.completed ? "text-ink/50 line-through" : "text-ink cursor-text"}`}
+          >
+            {task.title}
+          </span>
+        )}
 
         {!task.completed && (
           <div className="relative shrink-0">
@@ -294,9 +320,35 @@ export default function TaskCard({ task, onStartFocus, compact = false, emphasiz
         </button>
 
         <div className="flex-1 min-w-0 space-y-2">
-          <span className={`block text-sm sm:text-base font-medium ${task.completed ? "text-ink/50 line-through" : "text-ink"}`}>
-            {task.title}
-          </span>
+          {isEditingTitle ? (
+            <form onSubmit={handleTitleSubmit}>
+              <input
+                autoFocus
+                value={titleInput}
+                onChange={(e) => setTitleInput(e.target.value)}
+                onBlur={handleTitleSubmit}
+                onKeyDown={(e) => {
+                  if (e.key === "Escape") {
+                    setTitleInput(task.title);
+                    setIsEditingTitle(false);
+                  }
+                }}
+                className="block w-full text-sm sm:text-base font-medium text-ink bg-transparent outline-none border-b-2 border-folder-pinkDeep"
+              />
+            </form>
+          ) : (
+            <span
+              onDoubleClick={() => {
+                if (task.completed) return;
+                setTitleInput(task.title);
+                setIsEditingTitle(true);
+              }}
+              title="Double-click to edit"
+              className={`block text-sm sm:text-base font-medium ${task.completed ? "text-ink/50 line-through" : "text-ink cursor-text"}`}
+            >
+              {task.title}
+            </span>
+          )}
 
           <div className="flex flex-wrap items-center gap-2 pt-0.5">
             {isEditingCategory ? (
@@ -334,9 +386,44 @@ export default function TaskCard({ task, onStartFocus, compact = false, emphasiz
               </span>
             )}
 
-            <span className="inline-flex items-center gap-1 rounded-full bg-folder-pink/20 px-2 py-0.5 text-[10px] font-medium text-ink border border-folder-pink/40">
-              <Clock size={10} /> {task.estimated_minutes}m
-            </span>
+            {isEditingMinutes ? (
+              <form
+                onSubmit={handleMinutesSubmit}
+                className="inline-flex items-center gap-1 rounded-full bg-folder-pink/20 border border-folder-pinkDeep px-2 py-0.5"
+              >
+                <Clock size={10} className="text-ink shrink-0" />
+                <input
+                  autoFocus
+                  type="number"
+                  min={1}
+                  value={minutesInput}
+                  onChange={(e) => setMinutesInput(e.target.value)}
+                  onBlur={handleMinutesSubmit}
+                  onKeyDown={(e) => {
+                    if (e.key === "Escape") {
+                      setMinutesInput(String(task.estimated_minutes));
+                      setIsEditingMinutes(false);
+                    }
+                  }}
+                  className="w-8 bg-transparent text-[10px] font-medium text-ink outline-none [appearance:textfield]"
+                />
+                <span className="text-[10px] font-medium text-ink">m</span>
+              </form>
+            ) : (
+              <button
+                type="button"
+                onClick={() => {
+                  if (task.completed) return;
+                  setMinutesInput(String(task.estimated_minutes));
+                  setIsEditingMinutes(true);
+                }}
+                disabled={task.completed}
+                title="Edit estimated time"
+                className="inline-flex items-center gap-1 rounded-full bg-folder-pink/20 px-2 py-0.5 text-[10px] font-medium text-ink border border-folder-pink/40 hover:bg-folder-pink/30 transition-colors disabled:opacity-50"
+              >
+                <Clock size={10} /> {task.estimated_minutes}m
+              </button>
+            )}
 
             <div className="relative">
               <button
@@ -352,26 +439,31 @@ export default function TaskCard({ task, onStartFocus, compact = false, emphasiz
             </div>
           </div>
 
-          {/* Subtasks Section */}
-          {totalSubtasks > 0 && (
-            <div className="pt-3 mt-2 border-t border-folder-pink/25">
-              <div className="flex items-center justify-between">
-                <button
-                  onClick={() => setIsExpanded(!isExpanded)}
-                  className="flex items-center gap-1 text-[11px] font-semibold text-folder-pinkDeep hover:text-ink transition-colors"
-                >
-                  {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-                  Steps ({completedSubtasks}/{totalSubtasks})
-                </button>
-                <div className="flex items-center gap-2">
-                  <div className="w-16 h-1.5 bg-folder-pink/20 rounded-full overflow-hidden">
-                    <div className="h-full bg-folder-pinkDeep transition-all duration-300" style={{ width: `${progressPercent}%` }} />
+          {/* Subtasks Section - reachable even at zero subtasks for an active
+              task, since manually adding the first step is now the only way
+              to get one. A completed task with no subtasks shows nothing,
+              same as before; one with existing subtasks still shows them. */}
+          {(totalSubtasks > 0 || !task.completed) && (
+            <div className={totalSubtasks > 0 ? "pt-3 mt-2 border-t border-folder-pink/25" : "pt-1"}>
+              {totalSubtasks > 0 && (
+                <div className="flex items-center justify-between">
+                  <button
+                    onClick={() => setIsExpanded(!isExpanded)}
+                    className="flex items-center gap-1 text-[11px] font-semibold text-folder-pinkDeep hover:text-ink transition-colors"
+                  >
+                    {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                    Steps ({completedSubtasks}/{totalSubtasks})
+                  </button>
+                  <div className="flex items-center gap-2">
+                    <div className="w-16 h-1.5 bg-folder-pink/20 rounded-full overflow-hidden">
+                      <div className="h-full bg-folder-pinkDeep transition-all duration-300" style={{ width: `${progressPercent}%` }} />
+                    </div>
                   </div>
                 </div>
-              </div>
+              )}
 
-              {isExpanded && (
-                <div className="mt-2 space-y-1.5 pl-1">
+              {(isExpanded || totalSubtasks === 0) && (
+                <div className={totalSubtasks > 0 ? "mt-2 space-y-1.5 pl-1" : "space-y-1.5"}>
                   {task.subtasks.map((sub) => (
                     <div key={sub.id} className="flex items-center gap-2 p-1.5 hover:bg-folder-pink/10 rounded-lg transition-colors">
                       <button
@@ -388,23 +480,24 @@ export default function TaskCard({ task, onStartFocus, compact = false, emphasiz
                     </div>
                   ))}
 
-                  {isAddingSubtask ? (
-                    <form onSubmit={handleManualSubtaskSubmit} className="flex items-center gap-2 mt-1">
-                      <input
-                        autoFocus
-                        type="text"
-                        value={newSubtaskTitle}
-                        onChange={(e) => setNewSubtaskTitle(e.target.value)}
-                        placeholder="New step..."
-                        className="flex-1 rounded-lg border border-folder-pink/50 bg-white px-2 py-1 text-xs outline-none focus:border-folder-pinkDeep"
-                      />
-                      <button type="submit" className="text-xs font-semibold text-folder-pinkDeep hover:text-ink">Add</button>
-                    </form>
-                  ) : (
-                    <button onClick={() => setIsAddingSubtask(true)} className="flex items-center gap-1 text-[11px] text-ink/60 hover:text-folder-pinkDeep mt-1 pl-1">
-                      <Plus size={12} /> Add step
-                    </button>
-                  )}
+                  {!task.completed &&
+                    (isAddingSubtask ? (
+                      <form onSubmit={handleManualSubtaskSubmit} className="flex items-center gap-2 mt-1">
+                        <input
+                          autoFocus
+                          type="text"
+                          value={newSubtaskTitle}
+                          onChange={(e) => setNewSubtaskTitle(e.target.value)}
+                          placeholder="New step..."
+                          className="flex-1 rounded-lg border border-folder-pink/50 bg-white px-2 py-1 text-xs outline-none focus:border-folder-pinkDeep"
+                        />
+                        <button type="submit" className="text-xs font-semibold text-folder-pinkDeep hover:text-ink">Add</button>
+                      </form>
+                    ) : (
+                      <button onClick={() => setIsAddingSubtask(true)} className="flex items-center gap-1 text-[11px] text-ink/60 hover:text-folder-pinkDeep mt-1 pl-1">
+                        <Plus size={12} /> Add step
+                      </button>
+                    ))}
                 </div>
               )}
             </div>
@@ -424,15 +517,6 @@ export default function TaskCard({ task, onStartFocus, compact = false, emphasiz
               title="Focus Timer"
             >
               <Play size={14} className="fill-current" />
-            </button>
-          )}
-          {!task.completed && (
-            <button
-              onClick={handleBreakdown}
-              className="p-2 text-folder-pinkDeep hover:bg-folder-pink/15 rounded-xl transition-colors"
-              title="AI Breakdown"
-            >
-              <Sparkles size={14} className={task.isBreakingDown ? "animate-spin" : ""} />
             </button>
           )}
           <button

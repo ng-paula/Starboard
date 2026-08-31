@@ -15,12 +15,12 @@ interface TaskState {
   clearCompleted: () => void;
   toggleSubtask: (taskId: string, subtaskId: string) => void;
   addSubtaskManual: (taskId: string, title: string) => void;
-  setTasksBreakingDown: (id: string, isBreakingDown: boolean) => void;
-  updateTaskSubtasks: (id: string, subtasks: any[]) => void;
   moveCategory: (taskId: string, newCategory: string) => void;
   setDueDate: (taskId: string, dueDate: string | null) => void;
   addCategory: (name: string) => void;
   renameCategory: (oldName: string, newName: string) => void;
+  updateTaskTitle: (taskId: string, title: string) => void;
+  setEstimatedMinutes: (taskId: string, minutes: number) => void;
   reorderTasks: (sortedTasks: Task[]) => void;
 }
 
@@ -77,14 +77,6 @@ export const useTaskStore = create<TaskState>((set) => ({
     })
   })),
 
-  setTasksBreakingDown: (id, isBreakingDown) => set((state) => ({
-    tasks: state.tasks.map((t) => (t.id === id ? { ...t, isBreakingDown } : t))
-  })),
-
-  updateTaskSubtasks: (id, subtasks) => set((state) => ({
-    tasks: state.tasks.map((t) => (t.id === id ? { ...t, subtasks, isBreakingDown: false } : t))
-  })),
-
   moveCategory: (taskId, newCategory) => set((state) => ({
     tasks: state.tasks.map((t) => t.id === taskId ? { ...t, category: newCategory } : t)
   })),
@@ -102,5 +94,13 @@ export const useTaskStore = create<TaskState>((set) => ({
   renameCategory: (oldName, newName) => set((state) => ({
     tasks: state.tasks.map((t) => t.category === oldName ? { ...t, category: newName } : t),
     customCategories: state.customCategories.map((c) => c === oldName ? newName : c),
+  })),
+
+  updateTaskTitle: (taskId, title) => set((state) => ({
+    tasks: state.tasks.map((t) => t.id === taskId ? { ...t, title } : t)
+  })),
+
+  setEstimatedMinutes: (taskId, minutes) => set((state) => ({
+    tasks: state.tasks.map((t) => t.id === taskId ? { ...t, estimated_minutes: minutes } : t)
   })),
 }));

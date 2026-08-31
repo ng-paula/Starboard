@@ -21,5 +21,4 @@ export interface Task {
   scheduled_time?: string | null;
   starter_tip?: string | null;
   subtasks: Subtask[];
-  isBreakingDown?: boolean;
 }
