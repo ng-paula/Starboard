@@ -218,6 +218,11 @@ export default function Dashboard({ onBackToLanding, onSignOut, userEmail }: Das
 
   const pendingTasks = useMemo(() => tasks.filter((t) => !t.completed), [tasks]);
 
+  // Unlike a real date, Unscheduled has nothing left to track once a task is
+  // done - so its count is pending-only, unlike dateStats (below) which
+  // intentionally includes completed tasks for real dates.
+  const unscheduledPendingCount = useMemo(() => pendingTasks.filter((t) => !t.due_date).length, [pendingTasks]);
+
   const todayIso = toISODate(new Date());
   const tomorrowIso = toISODate(addDays(new Date(), 1));
 
@@ -459,7 +464,11 @@ export default function Dashboard({ onBackToLanding, onSignOut, userEmail }: Das
       // A specific day's agenda shows completed tasks too (struck through),
       // not just outstanding ones - unlike overview mode, which is
       // deliberately pending-only since it's about what's left to do.
-      return tasks.filter((t) => (selectedDay === UNSCHEDULED ? !t.due_date : t.due_date === selectedDay));
+      // Unscheduled has no date to "belong to" once done, so it stays
+      // pending-only or a finished task would linger there forever.
+      return selectedDay === UNSCHEDULED
+        ? pendingTasks.filter((t) => !t.due_date)
+        : tasks.filter((t) => t.due_date === selectedDay);
     }
     return tasks;
   }, [tasks, pendingTasks, activeView, activeCategory, selectedDay]);
@@ -789,7 +798,16 @@ export default function Dashboard({ onBackToLanding, onSignOut, userEmail }: Das
   const isTimelineDayMode = activeView === "Timeline" && selectedDay !== null;
   let dayHeading = "";
   let peek: { iso: string; label: string; count: number } | null = null;
-  const dayStats = selectedDay !== null ? dateStats.get(selectedDay) : undefined;
+  // Unscheduled has no date to "belong to" once done, so its stats (and the
+  // sidebar badge that reads this same map) should only count what's still
+  // pending - otherwise a cleared-out Unscheduled list still shows an old
+  // total that includes tasks that no longer need scheduling.
+  const dayStats =
+    selectedDay === UNSCHEDULED
+      ? { total: unscheduledPendingCount, done: 0 }
+      : selectedDay !== null
+      ? dateStats.get(selectedDay)
+      : undefined;
 
   if (isTimelineDayMode && selectedDay !== null) {
     if (selectedDay === UNSCHEDULED) {
@@ -1132,7 +1150,7 @@ export default function Dashboard({ onBackToLanding, onSignOut, userEmail }: Das
                     selectedDay === UNSCHEDULED ? "text-ink" : "text-ink/60 hover:text-ink"
                   }`}
                 >
-                  Unscheduled {(dateStats.get(UNSCHEDULED)?.total || 0) > 0 && `(${dateStats.get(UNSCHEDULED)!.total})`}
+                  Unscheduled {unscheduledPendingCount > 0 && `(${unscheduledPendingCount})`}
                 </button>
               </div>
             )}
