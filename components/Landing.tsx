@@ -6,9 +6,12 @@ import FloatingStars from "./FloatingStars";
 
 interface LandingProps {
   onStartListing?: () => void;
+  onTryDemo?: () => void;
+  isDemoLoading?: boolean;
+  demoError?: string | null;
 }
 
-export default function Landing({ onStartListing }: LandingProps) {
+export default function Landing({ onStartListing, onTryDemo, isDemoLoading, demoError }: LandingProps) {
   return (
     <main className="relative min-h-screen w-full flex items-center justify-center overflow-hidden bg-white select-none px-4 py-8">
 
@@ -104,6 +107,21 @@ export default function Landing({ onStartListing }: LandingProps) {
               Start Listing
             </span>
           </button>
+
+          {/* Secondary, lower-key entry point for someone who just wants to
+              poke around (e.g. a hiring manager) without creating a real
+              account - signs into a shared, pre-made demo user. */}
+          <button
+            onClick={onTryDemo}
+            disabled={isDemoLoading}
+            className="relative z-30 mt-2 text-ink/60 hover:text-ink text-[11px] xs:text-xs sm:text-sm font-medium underline decoration-dotted underline-offset-2 transition-colors disabled:opacity-50"
+          >
+            {isDemoLoading ? "Loading demo…" : "Try Demo (no signup needed)"}
+          </button>
+
+          {demoError && (
+            <p className="relative z-30 mt-1 text-[10px] xs:text-xs text-danger font-medium">{demoError}</p>
+          )}
 
         </div>
       </div>

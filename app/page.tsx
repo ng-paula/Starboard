@@ -8,11 +8,21 @@ import Landing from "@/components/Landing";
 import Dashboard from "@/components/Dashboard";
 import { createClient } from "@/lib/supabase/client";
 
+// A shared, pre-made Supabase account (not a secret - anyone clicking "Try
+// Demo" is meant to land in it) that lets a visitor explore the app with
+// zero signup friction. Create this user once in the Supabase dashboard
+// (Authentication -> Users -> Add User, with "Auto Confirm User" checked)
+// before this button will work.
+const DEMO_EMAIL = "demo@starboard.app";
+const DEMO_PASSWORD = "StarboardDemo2026!";
+
 export default function Home() {
   const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
   const [checkedAuth, setCheckedAuth] = useState(false);
   const [isInDashboard, setIsInDashboard] = useState(false);
+  const [isDemoLoading, setIsDemoLoading] = useState(false);
+  const [demoError, setDemoError] = useState<string | null>(null);
 
   useEffect(() => {
     const supabase = createClient();
@@ -42,6 +52,22 @@ export default function Home() {
     }
   };
 
+  const handleTryDemo = async () => {
+    setDemoError(null);
+    setIsDemoLoading(true);
+    const supabase = createClient();
+    const { error } = await supabase.auth.signInWithPassword({
+      email: DEMO_EMAIL,
+      password: DEMO_PASSWORD,
+    });
+    setIsDemoLoading(false);
+    if (error) {
+      setDemoError("Demo is temporarily unavailable - please try again shortly.");
+      return;
+    }
+    setIsInDashboard(true);
+  };
+
   const handleSignOut = async () => {
     const supabase = createClient();
     await supabase.auth.signOut();
@@ -65,7 +91,12 @@ export default function Home() {
             transition={{ duration: 0.35, ease: "easeInOut" }}
             className="w-full h-full"
           >
-            <Landing onStartListing={handleStartListing} />
+            <Landing
+              onStartListing={handleStartListing}
+              onTryDemo={handleTryDemo}
+              isDemoLoading={isDemoLoading}
+              demoError={demoError}
+            />
           </motion.div>
         ) : (
           <motion.div
