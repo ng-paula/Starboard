@@ -19,7 +19,7 @@ const quicksand = Quicksand({
 });
 
 export const metadata: Metadata = {
-  title: "Starboard — let's untangle those to-dos",
+  title: "Starboard",
   description:
     "A whimsical, AI-powered to-do list. Dump your messy brain, and Starboard sorts it out.",
 };
