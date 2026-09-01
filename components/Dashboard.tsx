@@ -17,6 +17,7 @@ import {
   ChevronLeft,
   ChevronRight,
   LogOut,
+  UserCircle,
   type LucideIcon,
 } from "lucide-react";
 import { useTaskStore } from "@/store/useTaskStore";
@@ -143,6 +144,19 @@ export default function Dashboard({ onBackToLanding, onSignOut, userEmail }: Das
   const [focusedTaskId, setFocusedTaskId] = useState<string | null>(null);
   const [focusReason, setFocusReason] = useState<string | null>(null);
   const [receiptPayload, setReceiptPayload] = useState<{ tasks: Task[]; title: string } | null>(null);
+
+  const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const profileRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!isProfileOpen) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (profileRef.current && !profileRef.current.contains(e.target as Node)) {
+        setIsProfileOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [isProfileOpen]);
 
   // Timeline is the default landing view - its functionality (what's due
   // today, quick scheduling) is more immediately useful than browsing
@@ -899,14 +913,39 @@ export default function Dashboard({ onBackToLanding, onSignOut, userEmail }: Das
             >
               <Zap size={14} className="fill-current" /> <span className="hidden sm:inline">What Now?</span>
             </button>
-            <button
-              onClick={onSignOut}
-              title={userEmail ? `Sign out of ${userEmail}` : "Sign out"}
-              aria-label="Sign out"
-              className="flex items-center justify-center p-2 rounded-full bg-white/60 hover:bg-white text-ink transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/30"
-            >
-              <LogOut size={14} />
-            </button>
+            <div className="relative" ref={profileRef}>
+              <button
+                onClick={() => setIsProfileOpen((v) => !v)}
+                title={userEmail ?? "Profile"}
+                aria-label="Profile menu"
+                aria-expanded={isProfileOpen}
+                className={`flex items-center justify-center p-2 rounded-full bg-white/60 hover:bg-white text-ink transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/30 ${
+                  isProfileOpen ? "bg-white" : ""
+                }`}
+              >
+                <UserCircle size={18} />
+              </button>
+
+              {isProfileOpen && (
+                <div className="absolute right-0 top-full mt-2 w-56 bg-white rounded-2xl shadow-[0_8px_30px_rgba(91,75,69,0.2)] border-2 border-folder-pink/50 p-1.5 z-50">
+                  {userEmail && (
+                    <div className="px-3 py-2 border-b border-ink/10 mb-1">
+                      <p className="text-[10px] uppercase tracking-wide text-ink/50 font-semibold">Signed in as</p>
+                      <p className="text-xs font-semibold text-ink truncate">{userEmail}</p>
+                    </div>
+                  )}
+                  <button
+                    onClick={() => {
+                      setIsProfileOpen(false);
+                      onSignOut();
+                    }}
+                    className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold text-danger hover:bg-danger/10 transition-colors"
+                  >
+                    <LogOut size={14} /> Sign out
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
