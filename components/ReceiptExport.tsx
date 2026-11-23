@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { toPng } from "html-to-image";
+import { motion } from "framer-motion";
 import { Loader2, X, Download } from "lucide-react";
 import type { Task } from "@/lib/types";
 
@@ -52,8 +53,11 @@ export default function ReceiptExport({ tasks, onClose, title = "Starboard" }: R
   });
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm px-4"
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 backdrop-blur-sm px-4"
       role="dialog"
       aria-modal="true"
       aria-label="Receipt preview"
@@ -61,18 +65,24 @@ export default function ReceiptExport({ tasks, onClose, title = "Starboard" }: R
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="relative flex max-h-[90vh] w-full max-w-sm flex-col items-center animate-in fade-in zoom-in duration-200">
+      <motion.div
+        initial={{ opacity: 0, y: -60, rotate: -2 }}
+        animate={{ opacity: 1, y: 0, rotate: 0 }}
+        exit={{ opacity: 0, y: 40, scale: 0.96 }}
+        transition={{ type: "spring", stiffness: 180, damping: 18 }}
+        className="relative flex max-h-[90vh] w-full max-w-sm flex-col items-center"
+      >
         {/* Close button */}
         <button
           onClick={onClose}
           aria-label="Close preview"
-          className="absolute -top-3 -right-3 z-10 rounded-full bg-white p-2 text-slate-700 shadow-md hover:opacity-80 transition-opacity"
+          className="absolute -top-3 -right-3 z-10 rounded-full bg-white p-2 text-ink shadow-md transition-transform duration-300 hover:rotate-90"
         >
           <X size={16} />
         </button>
 
         {/* Scrollable receipt card */}
-        <div className="w-full overflow-y-auto rounded-lg shadow-2xl">
+        <div className="w-full overflow-y-auto rounded-2xl shadow-[0_30px_80px_-20px_rgba(45,36,64,0.5)] scroll-thin">
           <div
             ref={receiptRef}
             className="w-full bg-[#FFFDF8] px-6 py-8 font-mono text-slate-800"
@@ -101,12 +111,12 @@ export default function ReceiptExport({ tasks, onClose, title = "Starboard" }: R
         <button
           onClick={handleDownload}
           disabled={exporting}
-          className="mt-4 flex w-full items-center justify-center gap-2 rounded-full bg-ink px-4 py-3 text-sm font-semibold text-white shadow-lg transition-opacity disabled:opacity-40"
+          className="btn-primary mt-4 w-full px-4 py-3 text-sm"
         >
           {exporting ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
           {exporting ? "Printing..." : "Download Receipt"}
         </button>
-      </div>
-    </div>
+      </motion.div>
+    </motion.div>
   );
 }
