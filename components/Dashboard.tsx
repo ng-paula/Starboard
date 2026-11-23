@@ -23,6 +23,7 @@ import {
   CheckCircle2,
   Info,
   ArrowRight,
+  ArrowUp,
   Pencil,
   ChevronDown,
   CalendarDays,
@@ -234,6 +235,25 @@ export default function Dashboard({ onSignIn, onSignOut, userEmail }: DashboardP
     const target = card.offsetLeft - strip.clientWidth / 2 + card.clientWidth / 2;
     strip.scrollTo({ left: Math.max(0, target), behavior: "smooth" });
   }, [activeCategory, activeView]);
+  // "Back to top" button. On desktop the main column scrolls inside the
+  // app frame; on phones the whole page scrolls - watch both.
+  const scrollColRef = useRef<HTMLDivElement>(null);
+  const [showScrollTop, setShowScrollTop] = useState(false);
+  useEffect(() => {
+    const col = scrollColRef.current;
+    const update = () => setShowScrollTop(Math.max(col?.scrollTop ?? 0, window.scrollY) > 500);
+    col?.addEventListener("scroll", update, { passive: true });
+    window.addEventListener("scroll", update, { passive: true });
+    update();
+    return () => {
+      col?.removeEventListener("scroll", update);
+      window.removeEventListener("scroll", update);
+    };
+  }, [isLoading]);
+  const scrollToTop = () => {
+    scrollColRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
   // Two-click confirm for deleting the open folder.
   const [confirmingDeleteFolder, setConfirmingDeleteFolder] = useState(false);
   const deleteFolderTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -2006,7 +2026,7 @@ export default function Dashboard({ onSignIn, onSignOut, userEmail }: DashboardP
       <div className="lg:flex lg:h-full lg:rounded-[24px] lg:border lg:border-line lg:bg-white lg:shadow-card lg:overflow-hidden">
         {sidebar}
 
-        <div className="flex-1 min-w-0 bg-white lg:h-full lg:overflow-y-auto scroll-thin">
+        <div ref={scrollColRef} className="flex-1 min-w-0 bg-white lg:h-full lg:overflow-y-auto scroll-thin">
           {/* Top bar */}
           <header className="sticky top-0 z-40 flex h-16 items-center justify-between gap-3 border-b border-line bg-white/90 px-4 backdrop-blur-md sm:px-6 lg:px-8">
             <div className="lg:hidden">{brand}</div>
@@ -2066,6 +2086,27 @@ export default function Dashboard({ onSignIn, onSignOut, userEmail }: DashboardP
           </main>
         </div>
       </div>
+
+      {/* Back to top */}
+      <AnimatePresence>
+        {showScrollTop && (
+          <motion.button
+            key="scroll-top"
+            onClick={scrollToTop}
+            aria-label="Back to top"
+            title="Back to top"
+            initial={{ opacity: 0, y: 12, scale: 0.9 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 12, scale: 0.9 }}
+            whileHover={{ y: -2 }}
+            whileTap={{ scale: 0.92 }}
+            transition={{ type: "spring", stiffness: 400, damping: 28 }}
+            className="fixed bottom-24 right-4 z-40 flex h-11 w-11 items-center justify-center rounded-full bg-ink text-white shadow-pop focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ink/20 lg:bottom-8 lg:right-10"
+          >
+            <ArrowUp size={18} />
+          </motion.button>
+        )}
+      </AnimatePresence>
 
       {/* Mobile bottom navigation */}
       <nav
