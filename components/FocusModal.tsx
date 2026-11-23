@@ -258,12 +258,11 @@ export default function FocusModal({
                   totalSeconds === m * 60 ? "text-ink" : "text-muted hover:text-ink"
                 }`}
               >
+                {/* Static highlight on purpose: a layoutId (sliding) highlight
+                    here kept the modal's exit animation from ever finishing,
+                    leaving an invisible overlay that blocked the whole app. */}
                 {totalSeconds === m * 60 && (
-                  <motion.span
-                    layoutId="focus-preset-pill"
-                    className="absolute inset-0 rounded-lg bg-white border border-line shadow-card"
-                    transition={{ type: "spring", stiffness: 400, damping: 30 }}
-                  />
+                  <span className="absolute inset-0 rounded-lg bg-white border border-line shadow-card" />
                 )}
                 <span className="relative">{m}m</span>
               </button>
