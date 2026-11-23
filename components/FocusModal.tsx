@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef, useId } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import { X, Play, Pause, RotateCcw, Sparkles, CheckCircle2, Check, Zap, Volume2, VolumeX } from "lucide-react";
 import type { Task } from "@/lib/types";
 
@@ -86,8 +87,8 @@ export default function FocusModal({
       const osc = audioCtx.createOscillator();
       const gain = audioCtx.createGain();
       osc.type = "sine";
-      osc.frequency.setValueAtTime(587.33, audioCtx.currentTime); 
-      osc.frequency.exponentialRampToValueAtTime(880, audioCtx.currentTime + 0.5); 
+      osc.frequency.setValueAtTime(587.33, audioCtx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(880, audioCtx.currentTime + 0.5);
       gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
       gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 1.2);
       osc.connect(gain);
@@ -141,45 +142,53 @@ export default function FocusModal({
   };
 
   return (
-    <div
-      className="fixed inset-0 z-50 bg-[#e4f0fa]/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200"
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.2 }}
+      className="fixed inset-0 z-50 bg-ink/40 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto"
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div
+      <motion.div
         ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
         tabIndex={-1}
-        className="w-full max-w-xl bg-white/95 border border-folder-pink/40 rounded-[2rem] shadow-[0_10px_40px_rgba(233,169,194,0.25)] p-6 sm:p-8 space-y-6 relative overflow-hidden focus:outline-none"
+        initial={{ opacity: 0, y: 40, scale: 0.94 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        exit={{ opacity: 0, y: 30, scale: 0.96 }}
+        transition={{ type: "spring", stiffness: 260, damping: 24 }}
+        className="w-full max-w-lg bg-white border border-line rounded-3xl shadow-pop p-6 sm:p-8 space-y-6 relative overflow-hidden focus:outline-none my-auto"
       >
 
         {/* Top Header */}
-        <div className="flex items-center justify-between pb-3 border-b border-folder-pink/25">
+        <div className="relative flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <span className="px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-folder-pink/30 text-ink flex items-center gap-1.5">
-              <Zap size={12} className="text-folder-pinkDeep" />
+            <span className="px-2.5 py-1 rounded-lg text-[11px] font-semibold uppercase tracking-[0.08em] bg-canvas text-ink flex items-center gap-1.5">
+              <Zap size={12} className="text-amber-deep" />
               Focus Mode
             </span>
           </div>
 
           <div className="flex items-center gap-2">
-            <button onClick={() => setSoundEnabled(!soundEnabled)} className="p-1.5 text-ink/70 hover:text-folder-pinkDeep hover:bg-folder-pink/15 rounded-xl transition">
+            <button onClick={() => setSoundEnabled(!soundEnabled)} aria-label={soundEnabled ? "Mute chime" : "Unmute chime"} className="p-2 text-muted hover:text-ink hover:bg-canvas rounded-lg transition">
               {soundEnabled ? <Volume2 size={18} /> : <VolumeX size={18} />}
             </button>
-            <button onClick={onClose} className="p-1.5 text-ink/70 hover:text-folder-pinkDeep hover:bg-folder-pink/15 rounded-xl transition">
+            <button onClick={onClose} aria-label="Close focus mode" className="p-2 text-muted hover:text-ink hover:bg-canvas rounded-lg transition">
               <X size={20} />
             </button>
           </div>
         </div>
 
         {/* Task Title & AI Reason */}
-        <div className="text-center space-y-2">
-          <h2 id={titleId} className="text-lg sm:text-xl font-bold text-ink leading-snug">{task.title}</h2>
+        <div className="relative text-center space-y-2">
+          <h2 id={titleId} className="text-xl sm:text-2xl font-extrabold tracking-tight text-ink leading-snug">{task.title}</h2>
           {reason && (
-            <p className="text-[11px] font-semibold text-ink bg-button-green/20 border border-button-green/40 inline-block px-3 py-1 rounded-full animate-in slide-in-from-bottom-2">
+            <p className="text-xs font-medium text-mint-deep bg-mint-soft inline-block px-3 py-1 rounded-lg">
               ✨ {reason}
             </p>
           )}
@@ -188,10 +197,23 @@ export default function FocusModal({
         {/* Minimal Circular Timer Ring */}
         <div className="flex flex-col items-center justify-center relative my-4">
           <div className="relative w-56 h-56 flex items-center justify-center">
-            <svg className="w-full h-full transform -rotate-90">
-              <circle cx="112" cy="112" r="100" stroke="#FBEAF0" strokeWidth="8" fill="transparent" />
+            {/* Gentle breathing disc while the timer is running */}
+            <motion.div
+              aria-hidden="true"
+              className="absolute inset-6 rounded-full bg-amber-soft"
+              animate={isRunning ? { scale: [0.96, 1.02, 0.96] } : { scale: 0.96 }}
+              transition={isRunning ? { duration: 4, repeat: Infinity, ease: "easeInOut" } : { duration: 0.4 }}
+            />
+            <svg className="relative w-full h-full transform -rotate-90">
+              <defs>
+                <linearGradient id="focus-ring-grad" x1="0" y1="0" x2="1" y2="1">
+                  <stop offset="0%" stopColor="#18181B" />
+                  <stop offset="100%" stopColor="#18181B" />
+                </linearGradient>
+              </defs>
+              <circle cx="112" cy="112" r="100" stroke="#ECE8E2" strokeWidth="8" fill="transparent" />
               <circle
-                cx="112" cy="112" r="100" stroke="#E9A9C2" strokeWidth="8" fill="transparent"
+                cx="112" cy="112" r="100" stroke="url(#focus-ring-grad)" strokeWidth="8" fill="transparent"
                 strokeDasharray={2 * Math.PI * 100}
                 strokeDashoffset={2 * Math.PI * 100 - progress * (2 * Math.PI * 100)}
                 strokeLinecap="round"
@@ -199,7 +221,7 @@ export default function FocusModal({
               />
             </svg>
             <div className="absolute flex flex-col items-center justify-center">
-              <span className="text-5xl font-bold tracking-tight text-ink font-mono">
+              <span className="text-5xl font-extrabold tracking-tight text-ink tabular-nums">
                 {String(minutes).padStart(2, "0")}:{String(seconds).padStart(2, "0")}
               </span>
             </div>
@@ -207,66 +229,89 @@ export default function FocusModal({
 
           {/* Timer Controls */}
           <div className="flex items-center gap-3 mt-6">
-            <button onClick={() => handleSetPreset(totalSeconds / 60)} className="p-3 rounded-2xl bg-ink/5 hover:bg-ink/10 text-ink/80 transition">
+            <button onClick={() => handleSetPreset(totalSeconds / 60)} aria-label="Reset timer" className="p-3 rounded-xl border border-line bg-white hover:bg-canvas text-ink/80 transition">
               <RotateCcw size={18} />
             </button>
 
             <button
               onClick={() => setIsRunning(!isRunning)}
-              className={`px-8 py-3.5 rounded-2xl font-bold text-sm flex items-center gap-2 transition shadow-sm active:scale-95 ${
-                isRunning ? "bg-folder-pinkDeep hover:bg-[#9c4767] text-white" : "bg-[#bce0fd] hover:bg-[#a6d3fc] text-[#2E6A82]"
+              className={`px-8 py-3.5 text-sm ${
+                isRunning
+                  ? "inline-flex items-center gap-2 rounded-xl font-semibold bg-white text-ink border-2 border-ink transition active:scale-95"
+                  : "btn-primary"
               }`}
             >
               {isRunning ? <><Pause size={16} className="fill-current" /> Pause</> : <><Play size={16} className="fill-current" /> Start Focus</>}
             </button>
 
-            <button onClick={handleAddFiveMinutes} className="px-3 py-2.5 rounded-2xl bg-ink/5 hover:bg-ink/10 text-ink/80 text-xs font-semibold transition">
+            <button onClick={handleAddFiveMinutes} className="px-3.5 py-3 rounded-xl border border-line bg-white hover:bg-canvas text-ink/80 text-xs font-semibold transition">
               +5m
             </button>
           </div>
 
           {/* Presets */}
-          <div className="flex items-center gap-2 mt-4 text-xs">
+          <div className="relative flex items-center gap-1 mt-4 text-xs rounded-xl bg-canvas border border-line p-1">
             {[15, 25, 45, 60].map((m) => (
               <button
                 key={m} onClick={() => handleSetPreset(m)}
-                className={`px-3 py-1 rounded-full font-medium transition ${
-                  totalSeconds === m * 60 ? "bg-folder-pink/30 text-ink" : "bg-ink/5 hover:bg-ink/10 text-ink/80"
+                className={`relative px-3.5 py-1 rounded-lg font-semibold transition-colors ${
+                  totalSeconds === m * 60 ? "text-ink" : "text-muted hover:text-ink"
                 }`}
               >
-                {m}m
+                {totalSeconds === m * 60 && (
+                  <motion.span
+                    layoutId="focus-preset-pill"
+                    className="absolute inset-0 rounded-lg bg-white border border-line shadow-card"
+                    transition={{ type: "spring", stiffness: 400, damping: 30 }}
+                  />
+                )}
+                <span className="relative">{m}m</span>
               </button>
             ))}
           </div>
         </div>
 
         {/* AI "Feeling Stuck?" Helper */}
-        <div className="bg-star/20 border border-star/45 rounded-2xl p-4">
+        <div className="relative bg-lilac-soft rounded-2xl p-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-1.5 text-xs font-bold text-ink">
-              <Sparkles size={14} className="text-folder-pinkDeep" /> AI Momentum Assistant
+              <Sparkles size={14} className="text-lilac-deep" /> Stuck? Get a nudge
             </div>
             <button
               onClick={handleFeelingStuck} disabled={isStuckLoading}
-              className="text-xs font-semibold text-ink hover:text-folder-pinkDeep transition"
+              className="text-xs font-semibold text-ink bg-white px-3 py-1.5 rounded-lg border border-line hover:border-ink/30 transition disabled:opacity-60"
             >
-              {isStuckLoading ? "Thinking..." : "Feeling Stuck?"}
+              {isStuckLoading ? (
+                <span className="inline-flex items-center gap-1">
+                  <Sparkles size={12} className="animate-spin" /> Thinking...
+                </span>
+              ) : (
+                "Feeling Stuck?"
+              )}
             </button>
           </div>
-          {stuckTip && (
-            <div className="mt-3 p-3 bg-white border border-star/40 rounded-xl text-xs text-ink font-medium animate-in fade-in">
-              {stuckTip}
-            </div>
-          )}
+          <AnimatePresence>
+            {stuckTip && (
+              <motion.div
+                key={stuckTip}
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0 }}
+                className="mt-3 p-3 bg-white rounded-xl text-sm text-ink"
+              >
+                {stuckTip}
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
 
         {/* Subtask Checklist */}
         {task.subtasks && task.subtasks.length > 0 && (
-          <div className="space-y-2 max-h-32 overflow-y-auto pr-1">
-            <span className="text-[10px] font-bold text-ink/80 uppercase tracking-wider block">Steps</span>
+          <div className="relative space-y-1.5 max-h-36 overflow-y-auto pr-1 scroll-thin">
+            <span className="eyebrow block">Steps</span>
             {task.subtasks.map((sub) => (
-              <div key={sub.id} onClick={() => onToggleSubtask(task.id, sub.id)} className="flex items-center gap-2 p-2 rounded-xl hover:bg-folder-pink/10 text-xs cursor-pointer transition border border-transparent hover:border-folder-pink/30">
-                <div className={`w-4 h-4 rounded-md flex items-center justify-center border transition ${sub.completed ? "bg-button-greenDeep border-button-greenDeep text-white" : "border-folder-pink/50 bg-white"}`}>
+              <div key={sub.id} onClick={() => onToggleSubtask(task.id, sub.id)} className="flex items-center gap-2.5 p-2 rounded-xl hover:bg-canvas text-sm cursor-pointer transition">
+                <div className={`w-[18px] h-[18px] rounded-[5px] flex items-center justify-center border-2 transition ${sub.completed ? "bg-ink border-ink text-white" : "border-ink/25 bg-white"}`}>
                   {sub.completed && <Check size={10} strokeWidth={3} />}
                 </div>
                 <span className={`flex-1 ${sub.completed ? "line-through text-ink/50" : "text-ink font-medium"}`}>{sub.title}</span>
@@ -276,17 +321,17 @@ export default function FocusModal({
         )}
 
         {/* Complete Task Button */}
-        <div className="pt-4 border-t border-folder-pink/25 flex items-center justify-between">
-          <span className="text-xs text-ink/80 font-medium">Finished your focus session?</span>
+        <div className="relative pt-4 border-t border-line flex items-center justify-between gap-3">
+          <span className="text-xs text-ink/70 font-medium">Finished your focus session?</span>
           <button
             onClick={() => onCompleteTask(task.id)}
-            className="px-5 py-2.5 bg-button-greenDeep hover:bg-button-greenDark text-white font-semibold text-xs rounded-xl transition flex items-center gap-2 active:scale-95"
+            className="btn-primary px-4 py-2.5 text-xs"
           >
             <CheckCircle2 size={16} /> Complete Task
           </button>
         </div>
 
-      </div>
-    </div>
+      </motion.div>
+    </motion.div>
   );
 }

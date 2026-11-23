@@ -2,6 +2,7 @@
 
 import React, { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import Image from "next/image";
+import { motion, AnimatePresence } from "framer-motion";
 import {
   Sparkles,
   Plus,
@@ -18,6 +19,16 @@ import {
   ChevronRight,
   LogOut,
   UserCircle,
+  AlertCircle,
+  CheckCircle2,
+  Info,
+  ArrowRight,
+  Pencil,
+  ChevronDown,
+  CalendarDays,
+  LogIn,
+  Cloud,
+  CloudOff,
   type LucideIcon,
 } from "lucide-react";
 import { useTaskStore } from "@/store/useTaskStore";
@@ -37,6 +48,8 @@ import type { Task } from "@/lib/types";
 import TaskCard from "./TaskCard";
 import FocusModal from "./FocusModal";
 import ReceiptExport from "./ReceiptExport";
+import ProgressRing from "./ui/ProgressRing";
+import AnimatedNumber from "./ui/AnimatedNumber";
 
 const UNSCHEDULED = "unscheduled" as const;
 
@@ -44,14 +57,14 @@ const UNSCHEDULED = "unscheduled" as const;
 // first appeared - stable as long as folders aren't reordered, which
 // they never are (there's no reorder UI for folders).
 const FOLDER_COLORS = [
-  "#F2A6B0", // washi pink
-  "#8FC4DE", // deep stripe blue
-  "#E8C170", // warm tan
-  "#7BA98A", // button green
-  "#A78BC4", // soft purple
-  "#C08552", // warm brown
-  "#E98A7A", // coral
-  "#6FA8A0", // teal
+  "#F27BA6", // pink
+  "#F7C35F", // amber
+  "#8EC5E8", // sky
+  "#A8DB8F", // mint
+  "#C9BBF2", // lilac
+  "#F49A7A", // coral
+  "#7FCFC4", // teal
+  "#E3C9A8", // sand
 ];
 
 function formatMinutes(mins: number): string {
@@ -62,7 +75,7 @@ function formatMinutes(mins: number): string {
 }
 
 interface DashboardProps {
-  onBackToLanding: () => void;
+  onSignIn: () => void;
   onSignOut: () => void;
   userEmail: string | null;
 }
@@ -112,7 +125,27 @@ const VIEWS: {
   },
 ];
 
-export default function Dashboard({ onBackToLanding, onSignOut, userEmail }: DashboardProps) {
+// Sliding highlight behind the active tab / day / folder. Every Pill with
+// the same `id` animates between positions via framer-motion layoutId.
+function Pill({ id, className = "bg-ink rounded-full" }: { id: string; className?: string }) {
+  return (
+    <motion.span
+      layoutId={id}
+      aria-hidden="true"
+      className={`absolute inset-0 shadow-sm ${className}`}
+      transition={{ type: "spring", stiffness: 420, damping: 34 }}
+    />
+  );
+}
+
+// Shared entrance for sidebar / header panels.
+const panelMotion = {
+  initial: { opacity: 0, y: 14 },
+  animate: { opacity: 1, y: 0 },
+  transition: { type: "spring" as const, stiffness: 220, damping: 24 },
+};
+
+export default function Dashboard({ onSignIn, onSignOut, userEmail }: DashboardProps) {
   const {
     tasks,
     customCategories,
@@ -128,6 +161,8 @@ export default function Dashboard({ onBackToLanding, onSignOut, userEmail }: Das
     isLoading,
     syncError,
     clearSyncError,
+    notice,
+    clearNotice,
   } = useTaskStore();
   const { parseText, isLoadingAi } = useBrainDump();
 
@@ -172,6 +207,11 @@ export default function Dashboard({ onBackToLanding, onSignOut, userEmail }: Das
   const [isAddingFolder, setIsAddingFolder] = useState(false);
   const [newFolderInput, setNewFolderInput] = useState("");
   const [folderTaskInput, setFolderTaskInput] = useState("");
+  // Which drop target (folder row or in-panel zone) a dragged task is
+  // currently hovering, so it can light up.
+  const [dragTarget, setDragTarget] = useState<string | null>(null);
+  // Sidebar "Folders" section collapse.
+  const [foldersOpen, setFoldersOpen] = useState(true);
 
   // Archive (Completed view): how the finished-task list is grouped.
   const [archiveGroupMode, setArchiveGroupMode] = useState<"day" | "week" | "folder">("day");
@@ -539,6 +579,12 @@ export default function Dashboard({ onBackToLanding, onSignOut, userEmail }: Das
     clearSyncError();
   }, [syncError, pushToast, clearSyncError]);
 
+  useEffect(() => {
+    if (!notice) return;
+    pushToast(notice, "success");
+    clearNotice();
+  }, [notice, pushToast, clearNotice]);
+
   // --- Cycle AI loading messages while parsing ---
   useEffect(() => {
     if (!isLoadingAi) {
@@ -636,6 +682,7 @@ export default function Dashboard({ onBackToLanding, onSignOut, userEmail }: Das
   // Folder Rail) onto a folder row or the in-panel drop zone refiles it.
   const handleDropOnCategory = (e: React.DragEvent, category: string) => {
     e.preventDefault();
+    setDragTarget(null);
     const taskId = e.dataTransfer.getData("text/plain");
     if (taskId) moveCategory(taskId, category);
   };
@@ -756,7 +803,7 @@ export default function Dashboard({ onBackToLanding, onSignOut, userEmail }: Das
       if (selectedDay === null) {
         return {
           title: "Nothing scheduled yet.",
-          sub: "Give a task a day using the calendar on the left.",
+          sub: "Add a task above, or pick a day from the calendar.",
           icon: Calendar,
         };
       }
@@ -765,7 +812,7 @@ export default function Dashboard({ onBackToLanding, onSignOut, userEmail }: Das
           selectedDay === UNSCHEDULED
             ? "Nothing unscheduled right now."
             : `No tasks for ${formatDayLabel(selectedDay)} yet.`,
-        sub: "Add one on the left, or pick another day.",
+        sub: "Add one above, or pick another day.",
         icon: Calendar,
       };
     }
@@ -781,7 +828,7 @@ export default function Dashboard({ onBackToLanding, onSignOut, userEmail }: Das
     }
     return {
       title: "Nothing to see here right now.",
-      sub: "Use the AI Brain Dump on the left to organize your thoughts.",
+      sub: "Use AI brain dump in the Timeline to organize your thoughts.",
       icon: LayoutGrid,
     };
   }, [activeView, selectedDay, activeCategory]);
@@ -789,17 +836,25 @@ export default function Dashboard({ onBackToLanding, onSignOut, userEmail }: Das
   const EmptyIcon = emptyStateCopy.icon;
 
   const emptyStateBlock = (
-    <div className="flex flex-col items-center justify-center p-12 text-center bg-white/50 backdrop-blur-sm rounded-3xl border border-dashed border-folder-pink/60">
-      <EmptyIcon size={32} className="text-folder-pink mb-3" />
-      <p className="text-sm font-medium text-ink">{emptyStateCopy.title}</p>
-      <p className="text-xs text-ink/80 mt-1">{emptyStateCopy.sub}</p>
-    </div>
+    <motion.div
+      initial={{ opacity: 0, y: 6 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ type: "spring", stiffness: 260, damping: 26 }}
+      className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-ink/20 bg-white px-6 py-12 text-center"
+    >
+      <span className="mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-canvas">
+        <EmptyIcon size={22} className="text-ink/60" />
+      </span>
+      <p className="text-sm font-bold text-ink">{emptyStateCopy.title}</p>
+      <p className="text-sm text-muted mt-1">{emptyStateCopy.sub}</p>
+    </motion.div>
   );
 
   const renderTaskCard = (task: (typeof pendingTasks)[number]) => (
     <TaskCard
       key={task.id}
       task={task}
+      folderColor={getFolderColor(task.category || "Inbox")}
       onStartFocus={(t) => {
         setFocusReason(null);
         setFocusedTaskId(t.id);
@@ -847,263 +902,332 @@ export default function Dashboard({ onBackToLanding, onSignOut, userEmail }: Das
 
   if (isLoading) {
     return (
-      <div className="min-h-screen w-full flex items-center justify-center" style={{ backgroundColor: "#FDF7EE" }}>
-        <div className="flex items-center gap-2 text-ink/60 text-sm font-medium">
-          <Sparkles size={16} className="animate-spin text-folder-pinkDeep" />
-          Loading your tasks...
+      <div className="min-h-screen bg-canvas lg:h-screen lg:p-3">
+        <div className="lg:flex lg:h-full lg:rounded-[24px] lg:border lg:border-line lg:bg-white lg:overflow-hidden">
+          <div className="hidden lg:flex w-[260px] shrink-0 flex-col gap-3 border-r border-line bg-sidebar p-5">
+            <div className="skeleton h-8 w-36 rounded-lg" />
+            <div className="skeleton mt-6 h-9 rounded-xl" />
+            <div className="skeleton h-9 rounded-xl" />
+            <div className="skeleton h-9 rounded-xl" />
+          </div>
+          <div className="flex-1 p-6 lg:p-8 flex flex-col gap-5">
+            <div className="skeleton h-6 w-48 rounded-lg" />
+            <div className="skeleton h-40 rounded-3xl" />
+            <div className="skeleton h-24 rounded-2xl" />
+            <div className="skeleton h-24 rounded-2xl" />
+          </div>
         </div>
       </div>
     );
   }
 
-  return (
-    <div
-      className="min-h-screen w-full relative paper-grain"
-      style={{
-        backgroundColor: "#FDF7EE",
-        backgroundImage:
-          "radial-gradient(circle, rgba(233,169,194,0.35) 2px, transparent 2px), radial-gradient(circle, rgba(233,169,194,0.35) 2px, transparent 2px)",
-        backgroundSize: "48px 48px, 48px 48px",
-        backgroundPosition: "0 0, 24px 24px",
-      }}
-    >
-      {/* NAVBAR */}
-      <header className="sticky top-0 z-40 w-full bg-stripe-blue/90 backdrop-blur-md border-b border-folder-pinkDark/50">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-3">
-          <button
-            onClick={onBackToLanding}
-            aria-label="Back to landing page"
-            className="flex items-center shrink-0 -ml-1 rounded-xl transition-transform hover:scale-105 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-folder-pinkDeep/40"
-          >
-            <Image src="/sb_logo.png" alt="Starboard" width={1640} height={500} priority sizes="140px" className="h-14 w-auto" />
-          </button>
+  // Drop-target props for drag-and-drop filing, with a highlight while a
+  // task is being dragged over the target.
+  const dropProps = (target: string, category: string) => ({
+    onDragOver: (e: React.DragEvent) => {
+      e.preventDefault();
+      if (dragTarget !== target) setDragTarget(target);
+    },
+    onDragLeave: (e: React.DragEvent) => {
+      if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDragTarget(null);
+    },
+    onDrop: (e: React.DragEvent) => handleDropOnCategory(e, category),
+  });
 
-          <nav
-            className="hidden sm:flex items-center gap-1 bg-white/60 rounded-full p-1"
-            role="tablist"
-            aria-label="Dashboard views"
-          >
-            {VIEWS.map((view) => {
-              const Icon = view.icon;
-              const isActive = activeView === view.id;
-              return (
-                <button
-                  key={view.id}
-                  role="tab"
-                  aria-selected={isActive}
-                  onClick={() => setActiveView(view.id)}
-                  className={`flex items-center gap-1.5 px-4 py-1.5 rounded-full text-xs font-semibold transition-all focus-visible:outline-none focus-visible:ring-2 ${view.ringClass} ${
-                    isActive ? view.activeClasses : "text-ink hover:bg-white"
-                  }`}
-                >
-                  <Icon size={14} /> {view.label}
-                </button>
-              );
-            })}
-          </nav>
+  const openFolder = (cat: string) => {
+    setActiveView("Categories");
+    setActiveCategory(cat);
+  };
 
-          <div className="flex items-center gap-2 shrink-0">
-            <span className="hidden md:flex items-center gap-1.5 text-xs font-semibold text-ink bg-white/60 px-3 py-1.5 rounded-full">
-              <Sparkles size={12} className="text-folder-pinkDeep" />
-              {pendingTasks.length} left
-            </span>
-            <button
-              onClick={handleWhatNow}
-              className="flex items-center gap-1.5 px-3.5 py-2 rounded-full bg-button-greenDeep hover:bg-button-greenDark text-white text-xs font-bold shadow-sm transition-all active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-button-greenDeep/50"
-            >
-              <Zap size={14} className="fill-current" /> <span className="hidden sm:inline">What Now?</span>
-            </button>
-            <div className="relative" ref={profileRef}>
-              <button
-                onClick={() => setIsProfileOpen((v) => !v)}
-                title={userEmail ?? "Profile"}
-                aria-label="Profile menu"
-                aria-expanded={isProfileOpen}
-                className={`flex items-center justify-center p-2 rounded-full bg-white/60 hover:bg-white text-ink transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/30 ${
-                  isProfileOpen ? "bg-white" : ""
-                }`}
-              >
-                <UserCircle size={18} />
-              </button>
+  const listKey = `${activeView}|${selectedDay ?? "overview"}|${activeCategory}|${archiveGroupMode}`;
+  const isGuest = !userEmail;
+  const hour = new Date().getHours();
+  const greeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
+  const todayLabel = new Date().toLocaleDateString(undefined, { day: "numeric", month: "long" });
+  const todayPending = pendingTasks.filter((t) => t.due_date === todayIso);
+  const plannedTodayMins = todayPending.reduce((sum, t) => sum + (t.estimated_minutes || 0), 0);
+  const overdueCount = pendingTasks.filter((t) => t.due_date && t.due_date < todayIso).length;
 
-              {isProfileOpen && (
-                <div className="absolute right-0 top-full mt-2 w-56 bg-white rounded-2xl shadow-[0_8px_30px_rgba(91,75,69,0.2)] border-2 border-folder-pink/50 p-1.5 z-50">
-                  {userEmail && (
-                    <div className="px-3 py-2 border-b border-ink/10 mb-1">
-                      <p className="text-[10px] uppercase tracking-wide text-ink/50 font-semibold">Signed in as</p>
-                      <p className="text-xs font-semibold text-ink truncate">{userEmail}</p>
-                    </div>
-                  )}
-                  <button
-                    onClick={() => {
-                      setIsProfileOpen(false);
-                      onSignOut();
-                    }}
-                    className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold text-danger hover:bg-danger/10 transition-colors"
-                  >
-                    <LogOut size={14} /> Sign out
-                  </button>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
+  const folderStats = (cat: string | "All") => {
+    const inFolder = cat === "All" ? tasks : tasks.filter((t) => (t.category || "Inbox") === cat);
+    const done = inFolder.filter((t) => t.completed).length;
+    return {
+      total: inFolder.length,
+      pending: inFolder.length - done,
+      pct: inFolder.length === 0 ? 0 : Math.round((done / inFolder.length) * 100),
+    };
+  };
 
-        {/* Mobile view tabs */}
-        <div
-          className="sm:hidden flex items-center gap-1.5 px-4 pb-3 overflow-x-auto scrollbar-hide"
-          role="tablist"
-          aria-label="Dashboard views"
-        >
-          {VIEWS.map((view) => {
-            const Icon = view.icon;
-            const isActive = activeView === view.id;
-            return (
-              <button
-                key={view.id}
-                role="tab"
-                aria-selected={isActive}
-                onClick={() => setActiveView(view.id)}
-                className={`flex items-center gap-1.5 whitespace-nowrap px-3.5 py-1.5 rounded-full text-xs font-semibold transition-all focus-visible:outline-none focus-visible:ring-2 ${view.ringClass} ${
-                  isActive ? view.activeClasses : "bg-white/60 text-ink"
-                }`}
-              >
-                <Icon size={13} /> {view.label}
-              </button>
-            );
-          })}
-        </div>      
-      </header>
+  // --- Reusable pieces -------------------------------------------------
 
-      {/* Toasts — sit below the navbar so they never cover it */}
-      <div
-        className="fixed top-20 right-4 z-50 flex flex-col gap-2 w-[min(90vw,320px)]"
-        aria-live="polite"
-        aria-label="Notifications"
+  const brand = (
+    <span className="flex items-center gap-2.5">
+      <span className="relative flex h-8 w-8 items-center justify-center rounded-xl bg-ink">
+        <Image src="/sb_star.png" alt="" width={20} height={20} className="h-5 w-5 object-contain" />
+      </span>
+      <span className="text-[17px] font-extrabold tracking-tight text-ink">Starboard</span>
+    </span>
+  );
+
+  const profileMenu = (
+    <div className="relative" ref={profileRef}>
+      <motion.button
+        onClick={() => setIsProfileOpen((v) => !v)}
+        whileTap={{ scale: 0.92 }}
+        title={userEmail ?? "Guest"}
+        aria-label="Account menu"
+        aria-expanded={isProfileOpen}
+        className="flex items-center gap-2 rounded-full p-0.5 pr-2 hover:bg-canvas transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/25"
       >
-        {toasts.map((t) => (
-          <div
-            key={t.id}
-            role="status"
-            className={`px-4 py-3 rounded-xl shadow-lg text-sm font-medium text-white animate-in fade-in slide-in-from-top-2 ${
-              t.tone === "error" ? "bg-danger" : t.tone === "success" ? "bg-button-greenDeep" : "bg-ink"
+        <span
+          className={`flex h-9 w-9 items-center justify-center rounded-full text-sm font-bold uppercase ${
+            isGuest ? "bg-canvas text-ink/60 border border-line" : "bg-amber text-ink"
+          }`}
+        >
+          {isGuest ? <UserCircle size={18} /> : userEmail!.charAt(0)}
+        </span>
+        <span className="hidden md:flex flex-col items-start leading-tight">
+          <span className="text-xs font-semibold text-ink max-w-[140px] truncate">{isGuest ? "Guest" : userEmail!.split("@")[0]}</span>
+          <span className="text-[11px] text-muted">{isGuest ? "Saved on this device" : "Synced"}</span>
+        </span>
+        <ChevronDown size={14} className="hidden md:block text-muted" />
+      </motion.button>
+
+      <AnimatePresence>
+        {isProfileOpen && (
+          <motion.div
+            initial={{ opacity: 0, y: -6, scale: 0.97 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -6, scale: 0.97 }}
+            transition={{ type: "spring", stiffness: 500, damping: 32 }}
+            className="absolute right-0 top-full mt-2 w-64 origin-top-right rounded-2xl bg-white border border-line shadow-pop p-1.5 z-50"
+          >
+            {isGuest ? (
+              <div className="p-2.5 flex flex-col gap-2.5">
+                <div>
+                  <p className="text-sm font-semibold text-ink">You&apos;re using Starboard as a guest</p>
+                  <p className="text-xs text-muted mt-0.5">Your tasks are saved in this browser. Sign in to keep them safe and use them on any device.</p>
+                </div>
+                <button
+                  onClick={() => {
+                    setIsProfileOpen(false);
+                    onSignIn();
+                  }}
+                  className="btn-primary w-full py-2 text-xs"
+                >
+                  <LogIn size={14} /> Sign in to save
+                </button>
+                <a href="/signup" className="text-center text-xs font-semibold text-ink/70 hover:text-ink">
+                  Create a free account
+                </a>
+              </div>
+            ) : (
+              <>
+                <div className="px-3 py-2.5 border-b border-line mb-1">
+                  <p className="text-[11px] text-muted">Signed in as</p>
+                  <p className="text-xs font-semibold text-ink truncate">{userEmail}</p>
+                </div>
+                <button
+                  onClick={() => {
+                    setIsProfileOpen(false);
+                    onSignOut();
+                  }}
+                  className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold text-danger hover:bg-danger/5 transition-colors"
+                >
+                  <LogOut size={14} /> Sign out
+                </button>
+              </>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+
+  const addTaskComposer = (
+    <form onSubmit={handleAddTask} className="panel p-2 flex flex-col gap-1">
+      <div className="relative flex items-start gap-2">
+        <AnimatePresence mode="wait" initial={false}>
+          {isSparkleMode ? (
+            <motion.textarea
+              key="dump"
+              initial={{ opacity: 0, height: 44 }}
+              animate={{ opacity: 1, height: 104 }}
+              exit={{ opacity: 0, height: 44 }}
+              transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+              value={inputVal}
+              onChange={(e) => setInputVal(e.target.value)}
+              placeholder="Brain dump: type everything on your mind, AI will split it into tasks..."
+              aria-label="Brain dump input"
+              className="flex-1 resize-none rounded-xl bg-lilac-soft/60 px-3 py-2.5 text-sm text-ink placeholder:text-ink/40 outline-none"
+            />
+          ) : (
+            <motion.input
+              key="quick"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.12 }}
+              type="text"
+              value={inputVal}
+              onChange={(e) => setInputVal(e.target.value)}
+              placeholder={
+                activeView === "Timeline" && selectedDay && selectedDay !== UNSCHEDULED
+                  ? `Add a task for ${selectedDay === todayIso ? "today" : formatDayLabel(selectedDay)}...`
+                  : "Add a new task..."
+              }
+              aria-label="Quick task title"
+              className="flex-1 rounded-xl px-3 py-2.5 text-sm text-ink placeholder:text-ink/40 outline-none"
+            />
+          )}
+        </AnimatePresence>
+        <div className={`flex items-center gap-1.5 shrink-0 ${isSparkleMode ? "self-end" : ""}`}>
+          <button
+            type="button"
+            onClick={() => setIsSparkleMode(!isSparkleMode)}
+            aria-pressed={isSparkleMode}
+            aria-label="Toggle AI brain-dump mode"
+            title="AI brain dump"
+            className={`flex items-center gap-1.5 rounded-lg px-2.5 py-2 text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/20 ${
+              isSparkleMode ? "bg-lilac text-lilac-deep" : "text-muted hover:bg-canvas hover:text-ink"
             }`}
           >
-            {t.message}
-          </div>
-        ))}
+            <Sparkles size={14} /> <span className="hidden sm:inline">AI</span>
+          </button>
+          <button
+            type="submit"
+            disabled={isLoadingAi || !inputVal.trim()}
+            aria-label={isSparkleMode ? "Parse brain dump into tasks" : "Add task"}
+            className="btn-primary h-9 px-3 text-xs"
+          >
+            {isLoadingAi ? <Sparkles size={14} className="animate-spin" /> : <Plus size={15} />}
+            <span className="hidden sm:inline">{isSparkleMode ? "Sort it" : "Add"}</span>
+          </button>
+        </div>
+      </div>
+      <AnimatePresence mode="wait">
+        {isLoadingAi && (
+          <motion.p
+            key={aiMessageIndex}
+            initial={{ opacity: 0, y: 4 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -4 }}
+            transition={{ duration: 0.18 }}
+            className="px-3 pb-1 text-xs font-medium text-lilac-deep"
+            aria-live="polite"
+          >
+            {AI_LOADING_MESSAGES[aiMessageIndex]}
+          </motion.p>
+        )}
+      </AnimatePresence>
+    </form>
+  );
+
+  const optimizeButton =
+    activeView !== "Completed" && !(activeView === "Timeline" && selectedDay === null) ? (
+      <button
+        onClick={handleOptimizeFlow}
+        disabled={isOptimizing || optimizeScope.length <= 1}
+        aria-label="Optimize task flow order"
+        className="btn-ghost"
+      >
+        <Sparkles size={14} className={`text-lilac-deep ${isOptimizing ? "animate-spin" : ""}`} />
+        {isOptimizing ? "Optimizing..." : "Optimize flow"}
+      </button>
+    ) : null;
+
+  const statItem = (label: string, value: React.ReactNode) => (
+    <div className="flex flex-col gap-0.5 px-4 first:pl-0 border-l border-line first:border-l-0">
+      <span className="text-xs text-muted whitespace-nowrap">{label}</span>
+      <span className="text-base font-bold text-ink tabular-nums whitespace-nowrap">{value}</span>
+    </div>
+  );
+
+  // --- Sidebar ---------------------------------------------------------
+
+  const navItem = (view: ViewMode, label: string, Icon: LucideIcon, count?: number) => {
+    const isActive = activeView === view;
+    return (
+      <button
+        key={view}
+        onClick={() => setActiveView(view)}
+        aria-current={isActive ? "page" : undefined}
+        className={`relative flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/20 ${
+          isActive ? "text-ink" : "text-ink/60 hover:text-ink hover:bg-white/70"
+        }`}
+      >
+        {isActive && <Pill id="side-nav-pill" className="rounded-xl bg-white border border-line shadow-card" />}
+        <Icon size={17} className="relative" />
+        <span className="relative flex-1 text-left">{label}</span>
+        {count !== undefined && count > 0 && (
+          <span className="relative text-xs font-semibold text-muted tabular-nums">{count}</span>
+        )}
+      </button>
+    );
+  };
+
+  const sidebar = (
+    <aside className="hidden lg:flex w-[260px] shrink-0 flex-col border-r border-line bg-sidebar">
+      <div className="flex h-16 items-center px-5 shrink-0">
+        <button onClick={() => setActiveView("Timeline")} aria-label="Starboard home" className="rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/20">
+          {brand}
+        </button>
       </div>
 
-      <div className="w-full max-w-6xl mx-auto flex flex-col lg:flex-row gap-6 xl:gap-10 px-4 py-6 sm:py-8">
-        {/* LEFT COLUMN: Add task + progress */}
-        <aside className="w-full lg:w-80 flex flex-col gap-6 shrink-0">
-          <div className="flex flex-col gap-5 sticky top-24">
-            {activeView !== "Categories" && activeView !== "Completed" && (
-              <div className="bg-white rounded-3xl p-5 shadow-[0_6px_24px_rgba(233,169,194,0.18)] border-2 border-folder-pink/50 flex flex-col gap-2">
-                <form onSubmit={handleAddTask} className="flex flex-col gap-2">
-                  <div className="flex items-center justify-between px-1">
-                    <span className="text-[11px] font-semibold uppercase tracking-wide text-ink/80">Add task</span>
-                    <button
-                      type="button"
-                      onClick={() => setIsSparkleMode(!isSparkleMode)}
-                      aria-pressed={isSparkleMode}
-                      aria-label="Toggle AI brain-dump mode"
-                      className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-folder-pinkDeep/40 ${
-                        isSparkleMode ? "bg-folder-pinkDeep text-white" : "bg-folder-pink/25 text-ink hover:bg-folder-pink/40"
-                      }`}
-                    >
-                      <Sparkles size={12} /> AI Mode
-                    </button>
-                  </div>
+      <div className="flex-1 overflow-y-auto scroll-thin px-3 pb-4">
+        <nav className="flex flex-col gap-0.5" aria-label="Views">
+          {navItem("Timeline", "Timeline", CalendarDays, todayPending.length)}
+          {navItem("Categories", "Folders", Folder)}
+          {navItem("Completed", "Completed", CheckSquare, completedTasks.length)}
+        </nav>
 
-                  <div className="relative">
-                    {isSparkleMode ? (
-                      <textarea
-                        value={inputVal}
-                        onChange={(e) => setInputVal(e.target.value)}
-                        placeholder="Dump chaotic thoughts here..."
-                        aria-label="Brain dump input"
-                        className="w-full p-3.5 pr-12 rounded-xl border-2 border-folder-pink/50 focus:border-folder-pinkDeep focus:outline-none min-h-[100px] text-sm resize-none text-ink bg-folder-pink/10 transition-all duration-200"
-                      />
-                    ) : (
-                      <input
-                        type="text"
-                        value={inputVal}
-                        onChange={(e) => setInputVal(e.target.value)}
-                        placeholder="Quick task title..."
-                        aria-label="Quick task title"
-                        className="w-full p-3.5 pr-12 rounded-xl border-2 border-ink/10 focus:border-ink/30 focus:outline-none text-sm text-ink bg-ink/5 transition-all duration-200"
-                      />
-                    )}
-                    <button
-                      type="submit"
-                      disabled={isLoadingAi || !inputVal.trim()}
-                      aria-label={isSparkleMode ? "Parse brain dump into tasks" : "Add task"}
-                      className="absolute right-2 bottom-2 p-2 bg-ink text-white rounded-lg transition-transform hover:scale-105 active:scale-95 disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/40"
-                    >
-                      {isLoadingAi ? <Sparkles size={14} className="animate-spin text-folder-pinkDeep" /> : <Plus size={14} />}
-                    </button>
-                  </div>
+        <div className="mt-6">
+          <button
+            onClick={() => setFoldersOpen((v) => !v)}
+            className="flex w-full items-center justify-between px-3 py-1.5 text-sm font-semibold text-ink"
+            aria-expanded={foldersOpen}
+          >
+            Folders
+            <motion.span animate={{ rotate: foldersOpen ? 0 : -90 }} className="flex text-muted">
+              <ChevronDown size={16} />
+            </motion.span>
+          </button>
 
-                  <p
-                    className={`text-xs text-folder-pinkDeep font-medium px-1 min-h-[1rem] transition-opacity duration-300 ${
-                      isLoadingAi ? "opacity-100" : "opacity-0"
-                    }`}
-                    aria-live="polite"
-                  >
-                    {isLoadingAi ? AI_LOADING_MESSAGES[aiMessageIndex] : ""}
-                  </p>
-                </form>
-              </div>
-            )}
+          <AnimatePresence initial={false}>
+            {foldersOpen && (
+              <motion.div
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: "auto", opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={{ duration: 0.2 }}
+                className="overflow-hidden"
+              >
+                <div className="flex flex-col gap-0.5 pt-1">
+                  {(["All", ...folderNames] as string[]).map((cat) => {
+                    const isActive = activeView === "Categories" && activeCategory === cat;
+                    const target = `row:${cat}`;
+                    const count = cat === "All" ? pendingTasks.length : categoryCounts.get(cat) || 0;
+                    return (
+                      <button
+                        key={cat}
+                        onClick={() => openFolder(cat)}
+                        {...dropProps(target, cat === "All" ? "Inbox" : cat)}
+                        className={`flex items-center gap-2.5 rounded-lg px-3 py-1.5 text-[13px] transition-all ${
+                          isActive ? "bg-white text-ink font-semibold shadow-card" : "text-ink/65 hover:text-ink hover:bg-white/70"
+                        } ${dragTarget === target ? "ring-2 ring-ink/40 bg-white scale-[1.02]" : ""}`}
+                      >
+                        <span
+                          className="h-2 w-2 rounded-full shrink-0"
+                          style={{ backgroundColor: cat === "All" ? "#18181B" : getFolderColor(cat) }}
+                        />
+                        <span className="flex-1 text-left truncate">{cat === "All" ? "All tasks" : cat}</span>
+                        <span className="text-xs text-muted tabular-nums">{count}</span>
+                      </button>
+                    );
+                  })}
 
-            {activeView === "Categories" && (
-              <div className="bg-white rounded-3xl p-5 shadow-[0_6px_24px_rgba(233,169,194,0.18)] border-2 border-folder-pink/50 flex flex-col gap-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-[11px] font-semibold uppercase tracking-wide text-ink/80">Folders</span>
-                  <button
-                    onClick={() => setIsAddingFolder(true)}
-                    className="text-[11px] font-semibold text-folder-pinkDeep hover:text-ink transition-colors"
-                  >
-                    + New
-                  </button>
-                </div>
-
-                <div className="flex flex-col gap-1">
-                  <button
-                    onClick={() => setActiveCategory("All")}
-                    onDragOver={(e) => e.preventDefault()}
-                    onDrop={(e) => handleDropOnCategory(e, "Inbox")}
-                    className={`flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-semibold transition-colors ${
-                      activeCategory === "All" ? "bg-ink text-white" : "text-ink hover:bg-ink/8"
-                    }`}
-                  >
-                    <span className={`h-2 w-2 rounded-full shrink-0 ${activeCategory === "All" ? "bg-white" : "bg-ink/60"}`} />
-                    <span className="flex-1 text-left truncate">All tasks</span>
-                    <span className={activeCategory === "All" ? "opacity-80" : "text-ink/50"}>{pendingTasks.length}</span>
-                  </button>
-
-                  {folderNames.map((cat) => (
-                    <button
-                      key={cat}
-                      onClick={() => setActiveCategory(cat)}
-                      onDragOver={(e) => e.preventDefault()}
-                      onDrop={(e) => handleDropOnCategory(e, cat)}
-                      className={`flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium transition-colors ${
-                        activeCategory === cat ? "bg-ink text-white" : "text-ink/80 hover:bg-ink/8"
-                      }`}
-                    >
-                      <span
-                        className="h-2 w-2 rounded-full shrink-0"
-                        style={{ backgroundColor: activeCategory === cat ? "#fff" : getFolderColor(cat) }}
-                      />
-                      <span className="flex-1 text-left truncate">{cat}</span>
-                      <span className={activeCategory === cat ? "opacity-80" : "text-ink/50"}>{categoryCounts.get(cat) || 0}</span>
-                    </button>
-                  ))}
-
-                  {isAddingFolder && (
-                    <form onSubmit={handleAddFolderSubmit} className="flex items-center gap-1.5 px-1 pt-1">
+                  {isAddingFolder ? (
+                    <form onSubmit={handleAddFolderSubmit} className="flex items-center gap-1.5 px-2 pt-1">
                       <input
                         autoFocus
                         value={newFolderInput}
@@ -1112,553 +1236,806 @@ export default function Dashboard({ onBackToLanding, onSignOut, userEmail }: Das
                           if (!newFolderInput.trim()) setIsAddingFolder(false);
                         }}
                         placeholder="Folder name..."
-                        className="flex-1 rounded-lg border border-folder-pink/50 bg-white px-2 py-1 text-xs outline-none focus:border-folder-pinkDeep"
+                        className="flex-1 min-w-0 rounded-lg border border-line bg-white px-2.5 py-1.5 text-xs outline-none focus:border-ink/30"
                       />
-                      <button type="submit" className="text-xs font-semibold text-folder-pinkDeep hover:text-ink">
+                      <button type="submit" className="btn-primary px-2.5 py-1.5 text-xs">
                         Add
                       </button>
                     </form>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {activeView === "Timeline" && (
-              <div className="bg-white rounded-3xl p-5 shadow-[0_6px_24px_rgba(233,169,194,0.18)] border-2 border-folder-pink/50 flex flex-col gap-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-[11px] font-semibold uppercase tracking-wide text-ink/80">Calendar</span>
-                  <button
-                    onClick={() => setSelectedDay(null)}
-                    className="text-[11px] font-semibold text-folder-pinkDeep hover:text-ink transition-colors"
-                  >
-                    Overview
-                  </button>
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <button
-                    onClick={() => changeWeek(-1)}
-                    aria-label="Previous week"
-                    className="p-1.5 rounded-lg text-ink/70 hover:bg-ink/10 hover:text-ink transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/30"
-                  >
-                    <ChevronLeft size={16} />
-                  </button>
-                  <span className="text-xs font-semibold text-ink/70">{formatWeekRangeLabel(weekDates)}</span>
-                  <button
-                    onClick={() => changeWeek(1)}
-                    aria-label="Next week"
-                    className="p-1.5 rounded-lg text-ink/70 hover:bg-ink/10 hover:text-ink transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/30"
-                  >
-                    <ChevronRight size={16} />
-                  </button>
-                </div>
-
-                <div className="grid grid-cols-7 gap-1" role="tablist" aria-label="Pick a day">
-                  {weekDates.map((day) => {
-                    const hasTasks = (dateStats.get(day.iso)?.total || 0) > 0;
-                    const isSelected = selectedDay === day.iso;
-                    return (
-                      <button
-                        key={day.iso}
-                        role="tab"
-                        aria-selected={isSelected}
-                        onClick={() => setSelectedDay(day.iso)}
-                        className={`flex flex-col items-center rounded-xl py-1.5 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/30 ${
-                          isSelected
-                            ? "bg-ink text-white"
-                            : day.isToday
-                            ? "bg-folder-pink/25 text-ink"
-                            : "text-ink/80 hover:bg-ink/10"
-                        }`}
-                      >
-                        <span className="text-[9px] font-semibold uppercase opacity-80">{day.weekdayShort.charAt(0)}</span>
-                        <span className="text-xs font-bold leading-none mt-0.5">{day.dayNum}</span>
-                        <span
-                          className={`mt-1 h-1 w-1 rounded-full ${
-                            hasTasks ? (isSelected ? "bg-white" : "bg-folder-pinkDeep") : "bg-transparent"
-                          }`}
-                        />
-                      </button>
-                    );
-                  })}
-                </div>
-
-                <button
-                  onClick={() => setSelectedDay(UNSCHEDULED)}
-                  className={`text-xs font-semibold transition-colors ${
-                    selectedDay === UNSCHEDULED ? "text-ink" : "text-ink/60 hover:text-ink"
-                  }`}
-                >
-                  Unscheduled {unscheduledPendingCount > 0 && `(${unscheduledPendingCount})`}
-                </button>
-              </div>
-            )}
-
-            {activeView !== "Completed" && progressScope.length > 0 && (
-              <div className="bg-white rounded-3xl p-5 shadow-[0_6px_24px_rgba(233,169,194,0.18)] border-2 border-folder-pink/50 flex flex-col gap-3">
-                <div className="flex items-center justify-between">
-                  <span className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-ink/80">
-                    <Flame size={12} className="text-folder-pinkDeep" />
-                    {isFolderScopedProgress ? `${activeCategory} progress` : "Today's progress"}
-                  </span>
-                  <span className="text-2xl font-bold text-folder-pinkDeep leading-none">{progressScopePct}%</span>
-                </div>
-                <div className="h-3 w-full bg-folder-pink/20 rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-gradient-to-r from-folder-pink to-folder-pinkDeep rounded-full transition-all duration-500"
-                    style={{ width: `${progressScopePct}%` }}
-                  />
-                </div>
-                <p className="text-xs text-ink/80">
-                  {progressScopeCompleted === 0
-                    ? isFolderScopedProgress
-                      ? `Finish your first ${activeCategory} task to get the ball rolling.`
-                      : activeView === "Timeline"
-                      ? "Finish your first task of the day to get the ball rolling."
-                      : "Finish your first task to get the ball rolling."
-                    : `${progressScopeCompleted} of ${progressScope.length} done — keep going!`}
-                </p>
-              </div>
-            )}
-
-            {activeView === "Completed" && (
-              completedTasks.length === 0 ? (
-                <div className="bg-white rounded-3xl p-5 shadow-[0_6px_24px_rgba(233,169,194,0.18)] border-2 border-folder-pink/50 flex flex-col items-center text-center gap-2">
-                  <Flame size={24} className="text-folder-pink" />
-                  <p className="text-sm font-medium text-ink">No streak yet.</p>
-                  <p className="text-xs text-ink/60">Finish a task to start tracking your stats.</p>
-                </div>
-              ) : (
-                <>
-                  <div className="bg-white rounded-3xl p-5 shadow-[0_6px_24px_rgba(233,169,194,0.18)] border-2 border-folder-pink/50 flex flex-col items-center gap-2 text-center">
-                    <span className="text-[11px] font-semibold uppercase tracking-wide text-ink/80">Current streak</span>
-                    <span className="text-4xl font-bold text-folder-pinkDeep leading-none">{currentStreak}</span>
-                    <span className="text-xs text-ink/60">day{currentStreak === 1 ? "" : "s"} finishing something</span>
-                    <div className="flex items-center gap-1 mt-1">
-                      {last7Days.map((d) => (
-                        <div
-                          key={d.iso}
-                          title={d.iso}
-                          className={`h-4 w-4 rounded-md ${
-                            d.hasActivity ? (d.isToday ? "bg-folder-pinkDeep" : "bg-folder-pink") : "bg-folder-pink/15"
-                          }`}
-                        />
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="bg-white rounded-3xl p-5 shadow-[0_6px_24px_rgba(233,169,194,0.18)] border-2 border-folder-pink/50 flex flex-col gap-2">
-                    <span className="text-[11px] font-semibold uppercase tracking-wide text-ink/80">This week</span>
-                    <div className="flex items-baseline justify-between">
-                      <span className="text-3xl font-bold text-ink leading-none">{thisWeekCompleted.length}</span>
-                      <span className={`text-xs font-semibold ${weekDelta >= 0 ? "text-button-greenDark" : "text-ink/50"}`}>
-                        {weekDelta >= 0 ? "+" : ""}
-                        {weekDelta} vs last week
+                  ) : (
+                    <button
+                      onClick={() => setIsAddingFolder(true)}
+                      className="flex items-center gap-2.5 rounded-lg px-3 py-1.5 text-[13px] font-medium text-ink/60 hover:text-ink transition-colors"
+                    >
+                      <span className="flex h-4 w-4 items-center justify-center rounded-full bg-ink text-white">
+                        <Plus size={11} strokeWidth={3} />
                       </span>
-                    </div>
-                    <div className="flex flex-col gap-1.5 pt-1 text-xs">
-                      <div className="flex items-center justify-between">
-                        <span className="text-ink/60">Focus time</span>
-                        <span className="font-semibold text-ink">{formatMinutes(focusTimeThisWeek)}</span>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-ink/60">Busiest day</span>
-                        <span className="font-semibold text-ink">
-                          {busiestDayThisWeek ? `${busiestDayThisWeek.day} · ${busiestDayThisWeek.count}` : "—"}
-                        </span>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-ink/60">Top folder</span>
-                        <span className="font-semibold text-ink">
-                          {topFolderThisWeek ? `${topFolderThisWeek.folder} · ${topFolderThisWeek.count}` : "—"}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {personalBest && (
-                    <div className="bg-white rounded-3xl p-5 shadow-[0_6px_24px_rgba(233,169,194,0.18)] border-2 border-folder-pink/50 flex flex-col gap-2">
-                      <span className="text-[11px] font-semibold uppercase tracking-wide text-ink/80">Personal best</span>
-                      <p className="text-sm text-ink">
-                        <span className="font-bold">
-                          {personalBest.count} task{personalBest.count === 1 ? "" : "s"}
-                        </span>{" "}
-                        in one day — {formatShortWeekdayDate(personalBest.iso)}.
-                        {thisWeekBestDayCount < personalBest.count && (
-                          <>
-                            {" "}
-                            You're <span className="font-semibold">{personalBest.count - thisWeekBestDayCount}</span> away this week.
-                          </>
-                        )}
-                      </p>
-                      <div className="h-2 w-full bg-folder-pink/20 rounded-full overflow-hidden">
-                        <div
-                          className="h-full bg-gradient-to-r from-folder-pink to-folder-pinkDeep rounded-full transition-all duration-500"
-                          style={{
-                            width: `${personalBest.count === 0 ? 0 : Math.min(100, Math.round((thisWeekBestDayCount / personalBest.count) * 100))}%`,
-                          }}
-                        />
-                      </div>
-                    </div>
+                      Add a new folder
+                    </button>
                   )}
-                </>
-              )
+                </div>
+              </motion.div>
             )}
-          </div>
-        </aside>
+          </AnimatePresence>
+        </div>
+      </div>
 
-        {/* RIGHT COLUMN: Workspace */}
-        <main className="flex-1 flex flex-col gap-4 lg:gap-6 min-w-0">
-          <div className="relative bg-white rounded-3xl p-5 shadow-[0_6px_24px_rgba(233,169,194,0.18)] border-2 border-folder-pink/50 flex flex-col gap-4">
-            <div className="absolute -top-2.5 left-8 w-16 h-3 bg-stripe-blue rounded-t-lg" aria-hidden="true" />
-            <div className="flex items-center justify-between flex-wrap gap-3">
-              {activeView === "Categories" ? (
-                isRenamingFolder ? (
-                  <form onSubmit={handleRenameSubmit} className="flex items-center gap-2">
-                    <span className="h-3 w-3 rounded-full shrink-0" style={{ backgroundColor: getFolderColor(activeCategory) }} />
-                    <input
-                      autoFocus
-                      value={folderNameInput}
-                      onChange={(e) => setFolderNameInput(e.target.value)}
-                      onBlur={handleRenameSubmit}
-                      className="text-2xl font-bold text-ink bg-transparent border-b-2 border-folder-pinkDeep outline-none w-40"
-                    />
-                  </form>
-                ) : (
-                  <div className="flex items-baseline gap-2 flex-wrap">
-                    <span
-                      className="h-3 w-3 rounded-full shrink-0 self-center"
-                      style={{ backgroundColor: activeCategory === "All" ? "#5B4B45" : getFolderColor(activeCategory) }}
-                    />
-                    <h1 className="text-2xl font-bold text-ink">{activeCategory === "All" ? "All Tasks" : activeCategory}</h1>
-                    <span className="text-xs text-ink/50 font-medium">
-                      {(activeCategory === "All" ? pendingTasks.length : categoryCounts.get(activeCategory) || 0)} task
-                      {(activeCategory === "All" ? pendingTasks.length : categoryCounts.get(activeCategory) || 0) === 1 ? "" : "s"} ·{" "}
-                      {formatMinutes(activeCategory === "All" ? pendingTasks.reduce((sum, t) => sum + (t.estimated_minutes || 0), 0) : categoryMinutes.get(activeCategory) || 0)} planned
-                    </span>
-                  </div>
-                )
-              ) : (
-                <h1 className="text-2xl font-bold text-ink flex items-center gap-2">
-                  {activeView === "Timeline" && (
-                    <>
-                      <Calendar className="text-[#2E6A82]" /> Schedule
-                    </>
-                  )}
-                  {activeView === "Completed" && (
-                    <>
-                      <CheckSquare className="text-button-greenDark" /> Archive
-                    </>
-                  )}
-                </h1>
-              )}
-
-              <div className="flex items-center gap-2">
-                {activeView === "Categories" && activeCategory !== "All" && !isRenamingFolder && (
-                  <button
-                    onClick={() => {
-                      setFolderNameInput(activeCategory);
-                      setIsRenamingFolder(true);
-                    }}
-                    className="flex items-center gap-1.5 px-3.5 py-1.5 bg-white border border-ink/15 hover:bg-ink/5 text-ink rounded-xl text-xs font-semibold transition-colors shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/30"
-                  >
-                    Rename
-                  </button>
-                )}
-                {activeView === "Categories" && (
-                  <button
-                    onClick={() =>
-                      setReceiptPayload({
-                        tasks: activeCategory === "All" ? tasks : tasks.filter((t) => t.category === activeCategory),
-                        title: activeCategory === "All" ? "All Tasks" : activeCategory,
-                      })
-                    }
-                    className="flex items-center gap-1.5 px-3.5 py-1.5 bg-white border border-ink/15 hover:bg-ink/5 text-ink rounded-xl text-xs font-semibold transition-colors shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/30"
-                  >
-                    <Receipt size={14} /> Print
-                  </button>
-                )}
-                {activeView === "Timeline" && (
-                  <button
-                    onClick={() => setReceiptPayload({ tasks: displayedTasks, title: "Starboard" })}
-                    className="flex items-center gap-1.5 px-3.5 py-1.5 bg-white border border-ink/15 hover:bg-ink/5 text-ink rounded-xl text-xs font-semibold transition-colors shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/30"
-                  >
-                    <Receipt size={14} /> Print Agenda
-                  </button>
-                )}
-                {activeView === "Completed" && (
-                  <>
-                    <button
-                      onClick={() => setReceiptPayload({ tasks: displayedTasks, title: "Starboard" })}
-                      disabled={displayedTasks.length === 0}
-                      className="flex items-center gap-1.5 px-3.5 py-1.5 bg-white border border-ink/15 hover:bg-ink/5 text-ink rounded-xl text-xs font-semibold transition-colors disabled:opacity-50 shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/30"
-                    >
-                      <Receipt size={14} /> Export Receipt
-                    </button>
-                    <button
-                      onClick={handleClearCompleted}
-                      disabled={displayedTasks.length === 0}
-                      aria-label={confirmingClear ? "Confirm clear all completed tasks" : "Clear all completed tasks"}
-                      className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-colors disabled:opacity-50 shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger/40 ${
-                        confirmingClear
-                          ? "bg-danger text-white border border-danger"
-                          : "bg-white border border-danger/30 text-danger hover:bg-danger/10"
-                      }`}
-                    >
-                      <Trash2 size={14} /> {confirmingClear ? "Confirm Clear?" : "Clear All"}
-                    </button>
-                  </>
-                )}
-                {activeView !== "Completed" && !(activeView === "Timeline" && selectedDay === null) && (
-                  <button
-                    onClick={handleOptimizeFlow}
-                    disabled={isOptimizing || optimizeScope.length <= 1}
-                    aria-label="Optimize task flow order"
-                    className="flex items-center gap-1.5 px-3.5 py-1.5 bg-folder-pink/20 hover:bg-folder-pink/35 text-ink rounded-xl text-xs font-semibold transition-colors disabled:opacity-40 disabled:hover:bg-folder-pink/20 border border-folder-pink/50 shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-folder-pinkDeep/40"
-                  >
-                    <Sparkles size={14} className={isOptimizing ? "animate-spin" : ""} />
-                    {isOptimizing ? "Optimizing Flow..." : "Optimize Flow"}
-                  </button>
-                )}
+      {/* Account */}
+      <div className="shrink-0 p-3 border-t border-line">
+        {isGuest ? (
+          <div className="rounded-2xl bg-white border border-line p-3.5 flex flex-col gap-2.5">
+            <div className="flex items-start gap-2.5">
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-amber-soft text-amber-deep">
+                <CloudOff size={16} />
+              </span>
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-ink">Guest mode</p>
+                <p className="text-xs text-muted leading-snug">Tasks are saved on this device only.</p>
               </div>
             </div>
+            <button onClick={onSignIn} className="btn-primary w-full py-2 text-xs">
+              <LogIn size={14} /> Sign in to save
+            </button>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2.5 rounded-2xl px-2 py-1.5">
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-amber text-xs font-bold uppercase text-ink">
+              {userEmail!.charAt(0)}
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="text-xs font-semibold text-ink truncate">{userEmail}</p>
+              <p className="flex items-center gap-1 text-[11px] text-mint-deep">
+                <Cloud size={11} /> Synced
+              </p>
+            </div>
+            <button onClick={onSignOut} aria-label="Sign out" title="Sign out" className="rounded-lg p-1.5 text-muted hover:bg-white hover:text-danger transition-colors">
+              <LogOut size={15} />
+            </button>
+          </div>
+        )}
+      </div>
+    </aside>
+  );
 
-            {activeView === "Categories" && (
-              <form onSubmit={handleAddTaskToFolder} className="relative">
-                <input
-                  value={folderTaskInput}
-                  onChange={(e) => setFolderTaskInput(e.target.value)}
-                  placeholder={`Add a task to ${activeCategory === "All" ? "Inbox" : activeCategory}...`}
-                  aria-label={`Add a task to ${activeCategory === "All" ? "Inbox" : activeCategory}`}
-                  className="w-full p-3.5 pr-12 rounded-xl border-2 border-folder-pink/40 bg-folder-pink/10 focus:border-folder-pinkDeep focus:outline-none text-sm text-ink transition-all duration-200"
-                />
-                <button
-                  type="submit"
-                  disabled={!folderTaskInput.trim()}
-                  aria-label="Add task"
-                  className="absolute right-2 top-1/2 -translate-y-1/2 p-2 bg-ink text-white rounded-lg transition-transform hover:scale-105 active:scale-95 disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/40"
-                >
-                  <Plus size={14} />
-                </button>
-              </form>
-            )}
+  // --- Views -----------------------------------------------------------
 
-            {activeView === "Timeline" && (
-              <div className="flex items-center gap-1 rounded-full bg-ink/8 p-1" role="tablist" aria-label="Timeline shortcuts">
-                <button
-                  role="tab"
-                  aria-selected={selectedDay === null}
-                  onClick={() => setSelectedDay(null)}
-                  className={`flex-1 px-3 py-1.5 rounded-full text-xs font-semibold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/30 ${
-                    selectedDay === null ? "bg-ink text-white" : "text-ink/80 hover:bg-white"
-                  }`}
-                >
-                  Overview
-                </button>
-                <button
-                  role="tab"
-                  aria-selected={selectedDay === todayIso}
-                  onClick={() => setSelectedDay(todayIso)}
-                  className={`flex-1 px-3 py-1.5 rounded-full text-xs font-semibold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/30 ${
-                    selectedDay === todayIso ? "bg-ink text-white" : "text-ink/80 hover:bg-white"
-                  }`}
-                >
-                  Today {(dateStats.get(todayIso)?.total ?? 0) > 0 && dateStats.get(todayIso)!.total}
-                </button>
-                <button
-                  role="tab"
-                  aria-selected={selectedDay === tomorrowIso}
-                  onClick={() => setSelectedDay(tomorrowIso)}
-                  className={`flex-1 px-3 py-1.5 rounded-full text-xs font-semibold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/30 ${
-                    selectedDay === tomorrowIso ? "bg-ink text-white" : "text-ink/80 hover:bg-white"
-                  }`}
-                >
-                  Tomorrow {(dateStats.get(tomorrowIso)?.total ?? 0) > 0 && dateStats.get(tomorrowIso)!.total}
-                </button>
-                {selectedDay !== null && (
-                  <span className="flex-1 px-3 py-1.5 text-center text-xs font-semibold text-ink/60">
-                    {selectedDay === UNSCHEDULED ? "Unscheduled" : formatDayLabel(selectedDay)}
-                  </span>
-                )}
-              </div>
-            )}
+  const timelineView = (
+    <div className="flex flex-col gap-6">
+      {/* Welcome banner */}
+      <motion.section
+        {...panelMotion}
+        className="relative overflow-hidden rounded-3xl bg-mint-soft border border-mint/60 px-6 py-6 sm:px-8 sm:py-7"
+      >
+        <svg aria-hidden="true" viewBox="0 0 320 180" className="pointer-events-none absolute -right-6 -top-2 h-[120%] w-auto opacity-90 hidden sm:block">
+          <motion.path
+            d="M40 120 C 80 40, 120 160, 170 70 S 250 40, 280 110"
+            stroke="#F27BA6"
+            strokeWidth="14"
+            strokeLinecap="round"
+            fill="none"
+            initial={{ pathLength: 0 }}
+            animate={{ pathLength: 1 }}
+            transition={{ duration: 1.4, ease: "easeInOut", delay: 0.2 }}
+          />
+          <motion.circle
+            cx="235"
+            cy="135"
+            r="28"
+            fill="#F7C35F"
+            animate={{ y: [0, -6, 0] }}
+            transition={{ duration: 5, repeat: Infinity, ease: "easeInOut" }}
+          />
+          <motion.g
+            style={{ originX: "120px", originY: "45px" }}
+            animate={{ rotate: [0, 12, 0] }}
+            transition={{ duration: 6, repeat: Infinity, ease: "easeInOut" }}
+          >
+            <path d="M120 18 l8 18 19 2 -14 13 4 19 -17 -10 -17 10 4 -19 -14 -13 19 -2z" fill="#18181B" />
+          </motion.g>
+          <rect x="268" y="28" width="26" height="26" rx="7" fill="#8EC5E8" transform="rotate(18 281 41)" />
+        </svg>
+        <div className="relative max-w-md">
+          <p className="text-sm font-medium text-ink/70">{greeting}, welcome back to your</p>
+          <h1 className="mt-1 text-2xl sm:text-[28px] font-extrabold tracking-tight text-ink leading-tight">Daily task board</h1>
+          <p className="mt-2 text-sm text-ink/70">
+            {todayPending.length === 0
+              ? overdueCount > 0
+                ? `Nothing due today, but ${overdueCount} overdue task${overdueCount === 1 ? "" : "s"} could use a look.`
+                : "Nothing due today. Plan something or enjoy the quiet."
+              : `${todayPending.length} task${todayPending.length === 1 ? "" : "s"} due today · ${formatMinutes(plannedTodayMins)} planned`}
+          </p>
+          <button onClick={handleWhatNow} className="btn-primary mt-4 px-4 py-2.5 text-sm">
+            <Zap size={15} className="fill-current" /> What should I do now?
+          </button>
+        </div>
+      </motion.section>
 
-            {activeView === "Completed" && (
-              <div className="flex items-center justify-between flex-wrap gap-3 bg-ink/5 p-3 rounded-2xl border border-ink/10">
-                <span className="text-sm font-medium text-ink/80">
-                  {completedTasks.length} task{completedTasks.length === 1 ? "" : "s"} finished all time · {archiveTodayCount} today
+      {/* Stats row */}
+      <div className="flex flex-wrap items-center gap-y-3 rounded-2xl border border-line bg-white px-5 py-4">
+        {statItem("Planned today", formatMinutes(plannedTodayMins))}
+        {statItem("Tasks left", <AnimatedNumber value={pendingTasks.length} />)}
+        {statItem("Finished today", <AnimatedNumber value={archiveTodayCount} />)}
+        {statItem("Streak", <><AnimatedNumber value={currentStreak} /> day{currentStreak === 1 ? "" : "s"}</>)}
+      </div>
+
+      <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_300px] gap-6 items-start">
+        {/* Task list */}
+        <section className="flex flex-col gap-4 min-w-0">
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <h2 className="text-lg font-bold text-ink">
+              {selectedDay === null ? "Schedule" : dayHeading}
+              {selectedDay !== null && dayStats && (
+                <span className="ml-2 text-sm font-medium text-muted">
+                  ({dayStats.total}
+                  {dayStats.done > 0 ? ` · ${dayStats.done} done` : ""})
                 </span>
-                <div className="flex items-center gap-1 rounded-full bg-white p-1 border border-ink/10">
-                  {(["day", "week", "folder"] as const).map((mode) => (
-                    <button
-                      key={mode}
-                      onClick={() => setArchiveGroupMode(mode)}
-                      className={`px-3 py-1 rounded-full text-xs font-semibold capitalize transition-colors ${
-                        archiveGroupMode === mode ? "bg-ink text-white" : "text-ink/60 hover:text-ink"
-                      }`}
-                    >
-                      {mode}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
+              )}
+            </h2>
+            <div className="flex items-center gap-2">
+              {optimizeButton}
+              <button onClick={() => setReceiptPayload({ tasks: displayedTasks, title: "Starboard" })} className="btn-ghost">
+                <Receipt size={14} /> Print
+              </button>
+            </div>
           </div>
 
-          <div className="flex flex-col gap-3 pb-20">
+          <div className="flex items-center gap-1 rounded-xl bg-canvas p-1 border border-line" role="tablist" aria-label="Timeline shortcuts">
+            {[
+              { id: null as string | null, label: "Overview", count: 0 },
+              { id: todayIso, label: "Today", count: dateStats.get(todayIso)?.total ?? 0 },
+              { id: tomorrowIso, label: "Tomorrow", count: dateStats.get(tomorrowIso)?.total ?? 0 },
+              { id: UNSCHEDULED as string, label: "Unscheduled", count: unscheduledPendingCount },
+            ].map((tab) => {
+              const isActive = selectedDay === tab.id;
+              return (
+                <button
+                  key={tab.label}
+                  role="tab"
+                  aria-selected={isActive}
+                  onClick={() => setSelectedDay(tab.id)}
+                  className={`relative flex-1 flex items-center justify-center gap-1.5 rounded-lg px-2 py-1.5 text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/20 ${
+                    isActive ? "text-ink" : "text-muted hover:text-ink"
+                  }`}
+                >
+                  {isActive && <Pill id="timeline-pill" className="rounded-lg bg-white border border-line shadow-card" />}
+                  <span className="relative">{tab.label}</span>
+                  {tab.count > 0 && <span className="relative text-[11px] text-muted tabular-nums">{tab.count}</span>}
+                </button>
+              );
+            })}
+          </div>
+
+          {addTaskComposer}
+
+          <motion.div
+            key={listKey}
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
+            className="flex flex-col gap-3"
+          >
             {timelineGroups ? (
               timelineGroups.length === 0 ? (
                 emptyStateBlock
               ) : (
-                <div className="flex flex-col gap-5">
-                  {timelineGroups.map((group) => (
-                    <div key={group.key} className="flex flex-col gap-3">
-                      <div className="flex items-center gap-2 px-1">
-                        <span
-                          className={`text-[11px] font-bold uppercase tracking-wide ${
-                            group.key === "overdue" ? "text-danger" : "text-ink/70"
-                          }`}
-                        >
-                          {group.label}
-                        </span>
-                        <span className="text-[11px] text-ink/40 font-medium">{group.tasks.length}</span>
-                        <div className={`flex-1 h-px ${group.key === "overdue" ? "bg-danger/20" : "bg-folder-pink/25"}`} />
-                      </div>
-                      <div className="flex flex-col gap-3">{group.tasks.map(renderTaskCard)}</div>
-                    </div>
-                  ))}
-                </div>
-              )
-            ) : isTimelineDayMode ? (
-              displayedTasks.length === 0 ? (
-                emptyStateBlock
-              ) : (
-                <div className="bg-white rounded-3xl p-5 shadow-[0_6px_24px_rgba(233,169,194,0.18)] border-2 border-folder-pink/50 flex flex-col">
-                  <div className="flex items-baseline justify-between px-1 pb-2">
-                    <h2 className="text-base font-bold text-ink">{dayHeading}</h2>
-                    <span className="text-xs text-ink/50 font-medium shrink-0 ml-3">
-                      {dayStats?.total ?? displayedTasks.length} task{(dayStats?.total ?? displayedTasks.length) === 1 ? "" : "s"}
-                      {(dayStats?.done ?? 0) > 0 && ` · ${dayStats!.done} done`}
-                    </span>
-                  </div>
-                  <div className="flex flex-col gap-1">{displayedTasks.map((task) => (
-                    <TaskCard
-                      key={task.id}
-                      task={task}
-                      compact
-                      emphasizeSchedule={selectedDay === UNSCHEDULED}
-                      onStartFocus={(t) => {
-                        setFocusReason(null);
-                        setFocusedTaskId(t.id);
-                      }}
-                    />
-                  ))}</div>
-                  {peek && (
-                    <div className="flex items-center justify-between pt-3 mt-2 border-t border-folder-pink/20 px-1">
-                      <span className="text-xs text-ink/60">
-                        {peek.label} · {peek.count} task{peek.count === 1 ? "" : "s"}
-                      </span>
-                      <button
-                        onClick={() => setSelectedDay(peek!.iso)}
-                        className="text-xs font-semibold text-folder-pinkDeep hover:text-ink transition-colors"
+                <div className="flex flex-col gap-6">
+                  <AnimatePresence initial={false}>
+                    {timelineGroups.map((group) => (
+                      <motion.section
+                        key={group.key}
+                        layout="position"
+                        initial={{ opacity: 0, y: 8 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, transition: { delay: 0.45, duration: 0.2 } }}
+                        className="flex flex-col gap-2.5"
                       >
-                        Peek →
-                      </button>
-                    </div>
-                  )}
+                        <div className="flex items-center gap-2 px-0.5">
+                          <span className={`text-sm font-bold ${group.key === "overdue" ? "text-danger" : "text-ink"}`}>{group.label}</span>
+                          <span className="text-sm font-medium text-muted">({group.tasks.length})</span>
+                        </div>
+                        <div className="flex flex-col gap-2.5">
+                          <AnimatePresence initial={false}>{group.tasks.map(renderTaskCard)}</AnimatePresence>
+                        </div>
+                      </motion.section>
+                    ))}
+                  </AnimatePresence>
                 </div>
               )
-            ) : activeView === "Categories" ? (
-              <>
-                {displayedTasks.length === 0
-                  ? emptyStateBlock
-                  : displayedTasks.map((task) => (
+            ) : displayedTasks.length === 0 ? (
+              emptyStateBlock
+            ) : (
+              <div className="panel p-2 flex flex-col">
+                <div className="flex flex-col gap-0.5">
+                  <AnimatePresence initial={false}>
+                    {displayedTasks.map((task) => (
                       <TaskCard
                         key={task.id}
                         task={task}
-                        draggable
+                        compact
+                        emphasizeSchedule={selectedDay === UNSCHEDULED}
+                        folderColor={getFolderColor(task.category || "Inbox")}
                         onStartFocus={(t) => {
                           setFocusReason(null);
                           setFocusedTaskId(t.id);
                         }}
                       />
                     ))}
-                {activeCategory !== "All" && (
-                  <div
-                    onDragOver={(e) => e.preventDefault()}
-                    onDrop={(e) => handleDropOnCategory(e, activeCategory)}
-                    className="flex items-center justify-center p-6 text-center rounded-2xl border-2 border-dashed border-folder-pink/50 text-xs font-medium text-ink/50"
-                  >
-                    Drag tasks here to file them under {activeCategory}
+                  </AnimatePresence>
+                </div>
+                {peek && (
+                  <div className="flex items-center justify-between mt-1 border-t border-line px-3 pt-2.5 pb-1.5">
+                    <span className="text-xs text-muted">
+                      {peek.label} · {peek.count} task{peek.count === 1 ? "" : "s"}
+                    </span>
+                    <button
+                      onClick={() => setSelectedDay(peek!.iso)}
+                      className="group inline-flex items-center gap-1 text-xs font-semibold text-ink/70 hover:text-ink transition-colors"
+                    >
+                      Next day <ArrowRight size={13} className="transition-transform group-hover:translate-x-0.5" />
+                    </button>
                   </div>
                 )}
-              </>
-            ) : activeView === "Completed" ? (
-              archiveGroups.length === 0 ? (
-                emptyStateBlock
-              ) : (
-                <div className="flex flex-col gap-5">
-                  {archiveGroups.map((group) => (
-                    <div key={group.key} className="flex flex-col gap-1">
-                      <div className="flex items-center gap-2 px-1 pb-1">
-                        {archiveGroupMode === "folder" && (
-                          <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: group.color }} />
-                        )}
-                        <span className="text-[11px] font-bold uppercase tracking-wide text-folder-pinkDeep">{group.label}</span>
-                        <span className="text-[11px] text-ink/40 font-medium">{group.tasks.length}</span>
-                        <div className="flex-1 h-px bg-folder-pink/25" />
-                      </div>
-                      <div className="flex flex-col gap-1">
-                        {group.tasks.map((task) => (
-                          <div
-                            key={task.id}
-                            className="group flex items-center gap-2.5 py-2 px-2.5 rounded-xl hover:bg-folder-pink/10 transition-colors"
-                          >
-                            <button
-                              onClick={() => toggleTask(task.id)}
-                              title="Mark as not done"
-                              className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 border-button-greenDeep bg-button-greenDeep text-white"
-                            >
-                              <Check size={9} strokeWidth={3} />
-                            </button>
-                            <span className="flex-1 min-w-0 truncate text-sm text-ink/60 line-through">{task.title}</span>
-                            <span className="shrink-0 text-xs text-ink/40">{archiveRowMeta(task, archiveGroupMode)}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )
-            ) : displayedTasks.length === 0 ? (
-              emptyStateBlock
-            ) : (
-              displayedTasks.map(renderTaskCard)
+              </div>
             )}
+          </motion.div>
+        </section>
+
+        {/* Right column: calendar + progress */}
+        <div className="flex flex-col gap-4 xl:sticky xl:top-24">
+          <div className="panel p-4 flex flex-col gap-3">
+            <div className="flex items-center justify-between">
+              <button
+                onClick={() => changeWeek(-1)}
+                aria-label="Previous week"
+                className="rounded-lg p-1.5 text-muted hover:bg-canvas hover:text-ink transition-colors"
+              >
+                <ChevronLeft size={16} />
+              </button>
+              <AnimatePresence mode="wait" initial={false}>
+                <motion.span
+                  key={weekOffset}
+                  initial={{ opacity: 0, x: 8 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -8 }}
+                  transition={{ duration: 0.15 }}
+                  className="text-sm font-semibold text-ink"
+                >
+                  {formatWeekRangeLabel(weekDates)}
+                </motion.span>
+              </AnimatePresence>
+              <button
+                onClick={() => changeWeek(1)}
+                aria-label="Next week"
+                className="rounded-lg p-1.5 text-muted hover:bg-canvas hover:text-ink transition-colors"
+              >
+                <ChevronRight size={16} />
+              </button>
+            </div>
+            <div className="grid grid-cols-7 gap-1" role="tablist" aria-label="Pick a day">
+              {weekDates.map((day) => {
+                const hasTasks = (dateStats.get(day.iso)?.total || 0) > 0;
+                const isSelected = selectedDay === day.iso;
+                return (
+                  <button
+                    key={day.iso}
+                    role="tab"
+                    aria-selected={isSelected}
+                    onClick={() => setSelectedDay(day.iso)}
+                    className={`relative flex flex-col items-center rounded-xl py-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/20 ${
+                      isSelected ? "text-white" : day.isToday ? "text-ink" : "text-ink/70 hover:bg-canvas"
+                    }`}
+                  >
+                    {isSelected && <Pill id="day-pill" className="rounded-xl bg-ink" />}
+                    {!isSelected && day.isToday && <span className="absolute inset-0 rounded-xl border border-ink/20" />}
+                    <span className="relative text-[10px] font-semibold uppercase opacity-70">{day.weekdayShort.charAt(0)}</span>
+                    <span className="relative text-sm font-bold leading-none mt-1">{day.dayNum}</span>
+                    <span
+                      className={`relative mt-1.5 h-1 w-1 rounded-full ${
+                        hasTasks ? (isSelected ? "bg-white" : "bg-pink") : "bg-transparent"
+                      }`}
+                    />
+                  </button>
+                );
+              })}
+            </div>
           </div>
-        </main>
+
+          {progressScope.length > 0 && (
+            <div className="panel p-4 flex items-center gap-4">
+              <ProgressRing percent={progressScopePct} size={64} stroke={7} />
+              <div className="min-w-0">
+                <p className="text-sm font-bold text-ink">Today&apos;s progress</p>
+                <p className="text-xs text-muted mt-0.5">
+                  {progressScopeCompleted === 0
+                    ? "Finish your first task of the day to get rolling."
+                    : `${progressScopeCompleted} of ${progressScope.length} done — keep going!`}
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+
+  const foldersView = (
+    <div className="flex flex-col gap-6">
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-extrabold tracking-tight text-ink">Folders</h1>
       </div>
 
-      {focusedTask && (
-        <FocusModal
-          task={focusedTask}
-          reason={focusReason}
-          onClose={() => {
-            setFocusedTaskId(null);
-            setFocusReason(null);
-          }}
-          onCompleteTask={(id) => {
-            toggleTask(id);
-            setFocusedTaskId(null);
-            setFocusReason(null);
-          }}
-          onToggleSubtask={toggleSubtask}
-        />
+      {/* Folder cards, like the reference's project cards */}
+      <div className="-mx-4 px-4 sm:mx-0 sm:px-0 flex sm:grid sm:grid-cols-[repeat(auto-fill,minmax(180px,1fr))] gap-3 overflow-x-auto sm:overflow-visible pb-1 scroll-thin">
+        {(["All", ...folderNames] as string[]).map((cat, i) => {
+          const isActive = activeCategory === cat;
+          const stats = folderStats(cat);
+          const color = cat === "All" ? "#18181B" : getFolderColor(cat);
+          const target = `card:${cat}`;
+          return (
+            <motion.button
+              key={cat}
+              onClick={() => setActiveCategory(cat)}
+              {...dropProps(target, cat === "All" ? "Inbox" : cat)}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0, rotate: dragTarget === target ? -2 : 0, scale: dragTarget === target ? 1.04 : 1 }}
+              whileHover={{ y: -3 }}
+              transition={{ type: "spring", stiffness: 300, damping: 24, delay: i * 0.03 }}
+              className={`relative flex h-36 w-44 sm:w-auto shrink-0 flex-col justify-between rounded-2xl p-4 text-left transition-shadow focus-visible:outline-none ${
+                isActive ? "ring-2 ring-ink ring-offset-2 ring-offset-white shadow-lift" : "hover:shadow-lift"
+              }`}
+              style={{ backgroundColor: color, color: cat === "All" ? "#fff" : "#18181B" }}
+            >
+              <div>
+                <p className="text-base font-extrabold leading-tight truncate">{cat === "All" ? "All tasks" : cat}</p>
+                <p className="text-xs font-medium opacity-70 mt-0.5">
+                  {stats.pending} open · {formatMinutes(cat === "All" ? pendingTasks.reduce((s, t) => s + (t.estimated_minutes || 0), 0) : categoryMinutes.get(cat) || 0)}
+                </p>
+              </div>
+              <div>
+                <p className="text-[11px] font-semibold opacity-75 mb-1.5">{stats.pct}% done</p>
+                <div className={`h-1.5 w-full overflow-hidden rounded-full ${cat === "All" ? "bg-white/20" : "bg-black/10"}`}>
+                  <motion.div
+                    className={`h-full rounded-full ${cat === "All" ? "bg-white" : "bg-white/90"}`}
+                    initial={{ width: 0 }}
+                    animate={{ width: `${stats.pct}%` }}
+                    transition={{ type: "spring", stiffness: 80, damping: 18, delay: 0.1 }}
+                  />
+                </div>
+              </div>
+            </motion.button>
+          );
+        })}
+
+        {isAddingFolder ? (
+          <form
+            onSubmit={handleAddFolderSubmit}
+            className="flex h-36 w-44 sm:w-auto shrink-0 flex-col justify-center gap-2 rounded-2xl border border-dashed border-ink/25 bg-white p-4"
+          >
+            <input
+              autoFocus
+              value={newFolderInput}
+              onChange={(e) => setNewFolderInput(e.target.value)}
+              onBlur={() => {
+                if (!newFolderInput.trim()) setIsAddingFolder(false);
+              }}
+              placeholder="Folder name..."
+              className="field py-2 text-sm"
+            />
+            <button type="submit" className="btn-primary py-2 text-xs">
+              Create folder
+            </button>
+          </form>
+        ) : (
+          <button
+            onClick={() => setIsAddingFolder(true)}
+            className="flex h-36 w-44 sm:w-auto shrink-0 flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-ink/25 bg-white/50 text-sm font-semibold text-ink/60 hover:border-ink/50 hover:text-ink hover:bg-white transition-colors"
+          >
+            <span className="flex h-8 w-8 items-center justify-center rounded-full bg-ink text-white">
+              <Plus size={16} />
+            </span>
+            New folder
+          </button>
+        )}
+      </div>
+
+      {/* Selected folder */}
+      <section className="flex flex-col gap-4">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          {isRenamingFolder ? (
+            <form onSubmit={handleRenameSubmit} className="flex items-center gap-2">
+              <span className="h-3 w-3 rounded-full shrink-0" style={{ backgroundColor: getFolderColor(activeCategory) }} />
+              <input
+                autoFocus
+                value={folderNameInput}
+                onChange={(e) => setFolderNameInput(e.target.value)}
+                onBlur={handleRenameSubmit}
+                className="text-lg font-bold text-ink bg-transparent border-b-2 border-ink outline-none w-48"
+              />
+            </form>
+          ) : (
+            <div className="flex items-center gap-3">
+              {isFolderScopedProgress && progressScope.length > 0 && <ProgressRing percent={progressScopePct} size={44} stroke={5} showLabel={false} />}
+              <div>
+                <h2 className="text-lg font-bold text-ink">
+                  {activeCategory === "All" ? "All tasks" : activeCategory}
+                  <span className="ml-2 text-sm font-medium text-muted">
+                    ({activeCategory === "All" ? pendingTasks.length : categoryCounts.get(activeCategory) || 0})
+                  </span>
+                </h2>
+                {isFolderScopedProgress && progressScope.length > 0 && (
+                  <p className="text-xs text-muted">
+                    {progressScopeCompleted} of {progressScope.length} done · {progressScopePct}%
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
+          <div className="flex items-center gap-2 flex-wrap">
+            {activeCategory !== "All" && !isRenamingFolder && (
+              <button
+                onClick={() => {
+                  setFolderNameInput(activeCategory);
+                  setIsRenamingFolder(true);
+                }}
+                className="btn-ghost"
+              >
+                <Pencil size={13} /> Rename
+              </button>
+            )}
+            <button
+              onClick={() =>
+                setReceiptPayload({
+                  tasks: activeCategory === "All" ? tasks : tasks.filter((t) => t.category === activeCategory),
+                  title: activeCategory === "All" ? "All Tasks" : activeCategory,
+                })
+              }
+              className="btn-ghost"
+            >
+              <Receipt size={14} /> Print
+            </button>
+            {optimizeButton}
+          </div>
+        </div>
+
+        <form onSubmit={handleAddTaskToFolder} className="panel p-2 flex items-center gap-2">
+          <input
+            value={folderTaskInput}
+            onChange={(e) => setFolderTaskInput(e.target.value)}
+            placeholder={`Add a task to ${activeCategory === "All" ? "Inbox" : activeCategory}...`}
+            aria-label={`Add a task to ${activeCategory === "All" ? "Inbox" : activeCategory}`}
+            className="flex-1 rounded-xl px-3 py-2.5 text-sm text-ink placeholder:text-ink/40 outline-none"
+          />
+          <button type="submit" disabled={!folderTaskInput.trim()} aria-label="Add task" className="btn-primary h-9 px-3 text-xs">
+            <Plus size={15} /> <span className="hidden sm:inline">Add</span>
+          </button>
+        </form>
+
+        <motion.div
+          key={listKey}
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
+          className="flex flex-col gap-2.5"
+        >
+          {displayedTasks.length === 0 ? (
+            emptyStateBlock
+          ) : (
+            <AnimatePresence initial={false}>
+              {displayedTasks.map((task) => (
+                <TaskCard
+                  key={task.id}
+                  task={task}
+                  draggable
+                  folderColor={getFolderColor(task.category || "Inbox")}
+                  onStartFocus={(t) => {
+                    setFocusReason(null);
+                    setFocusedTaskId(t.id);
+                  }}
+                />
+              ))}
+            </AnimatePresence>
+          )}
+          {activeCategory !== "All" && (
+            <div
+              {...dropProps("zone", activeCategory)}
+              className={`flex items-center justify-center gap-2 rounded-2xl border border-dashed p-5 text-xs font-semibold transition-all duration-200 ${
+                dragTarget === "zone" ? "border-ink bg-white text-ink scale-[1.01]" : "border-ink/20 text-muted"
+              }`}
+            >
+              <Folder size={14} />
+              Drag tasks here to move them into {activeCategory}
+            </div>
+          )}
+        </motion.div>
+      </section>
+    </div>
+  );
+
+  const completedView = (
+    <div className="flex flex-col gap-6">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <h1 className="text-2xl font-extrabold tracking-tight text-ink">Completed</h1>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setReceiptPayload({ tasks: displayedTasks, title: "Starboard" })}
+            disabled={displayedTasks.length === 0}
+            className="btn-ghost"
+          >
+            <Receipt size={14} /> Export receipt
+          </button>
+          <button
+            onClick={handleClearCompleted}
+            disabled={displayedTasks.length === 0}
+            aria-label={confirmingClear ? "Confirm clear all completed tasks" : "Clear all completed tasks"}
+            className={`btn-ghost ${confirmingClear ? "!bg-danger !text-white !border-danger" : "!text-danger"}`}
+          >
+            <Trash2 size={14} /> {confirmingClear ? "Confirm clear?" : "Clear all"}
+          </button>
+        </div>
+      </div>
+
+      {completedTasks.length > 0 && (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          <div className="rounded-2xl bg-pink-soft p-4">
+            <p className="text-xs font-medium text-ink/70">Current streak</p>
+            <p className="mt-1 text-2xl font-extrabold text-ink">
+              <AnimatedNumber value={currentStreak} /> <span className="text-sm font-semibold">day{currentStreak === 1 ? "" : "s"}</span>
+            </p>
+            <div className="mt-2 flex gap-1">
+              {last7Days.map((d, i) => (
+                <motion.span
+                  key={d.iso}
+                  title={d.iso}
+                  initial={{ scale: 0 }}
+                  animate={{ scale: 1 }}
+                  transition={{ delay: 0.05 * i, type: "spring", stiffness: 500, damping: 20 }}
+                  className={`h-3 flex-1 rounded-[4px] ${d.hasActivity ? (d.isToday ? "bg-ink" : "bg-pink") : "bg-white/80"}`}
+                />
+              ))}
+            </div>
+          </div>
+          <div className="rounded-2xl bg-amber-soft p-4">
+            <p className="text-xs font-medium text-ink/70">This week</p>
+            <p className="mt-1 text-2xl font-extrabold text-ink">
+              <AnimatedNumber value={thisWeekCompleted.length} />
+            </p>
+            <p className={`mt-1 text-xs font-semibold ${weekDelta >= 0 ? "text-mint-deep" : "text-muted"}`}>
+              {weekDelta >= 0 ? "+" : ""}
+              {weekDelta} vs last week
+            </p>
+          </div>
+          <div className="rounded-2xl bg-sky-soft p-4">
+            <p className="text-xs font-medium text-ink/70">Focus time</p>
+            <p className="mt-1 text-2xl font-extrabold text-ink">{formatMinutes(focusTimeThisWeek)}</p>
+            <p className="mt-1 text-xs text-ink/60 truncate">
+              {busiestDayThisWeek ? `Busiest: ${busiestDayThisWeek.day}` : "—"}
+              {topFolderThisWeek ? ` · ${topFolderThisWeek.folder}` : ""}
+            </p>
+          </div>
+          <div className="rounded-2xl bg-mint-soft p-4">
+            <p className="text-xs font-medium text-ink/70">Personal best</p>
+            {personalBest ? (
+              <>
+                <p className="mt-1 text-2xl font-extrabold text-ink">
+                  {personalBest.count} <span className="text-sm font-semibold">in a day</span>
+                </p>
+                <p className="mt-1 text-xs text-ink/60 truncate">
+                  {formatShortWeekdayDate(personalBest.iso)}
+                  {thisWeekBestDayCount < personalBest.count && ` · ${personalBest.count - thisWeekBestDayCount} away`}
+                </p>
+              </>
+            ) : (
+              <p className="mt-1 text-2xl font-extrabold text-ink">—</p>
+            )}
+          </div>
+        </div>
       )}
 
-      {receiptPayload && (
-        <ReceiptExport tasks={receiptPayload.tasks} title={receiptPayload.title} onClose={() => setReceiptPayload(null)} />
-      )}
+      <section className="flex flex-col gap-4">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <p className="text-sm text-muted">
+            <span className="font-bold text-ink">
+              <AnimatedNumber value={completedTasks.length} />
+            </span>{" "}
+            finished all time · {archiveTodayCount} today
+          </p>
+          <div className="flex items-center gap-1 rounded-xl bg-canvas p-1 border border-line">
+            {(["day", "week", "folder"] as const).map((mode) => (
+              <button
+                key={mode}
+                onClick={() => setArchiveGroupMode(mode)}
+                className={`relative rounded-lg px-3 py-1 text-xs font-semibold capitalize transition-colors ${
+                  archiveGroupMode === mode ? "text-ink" : "text-muted hover:text-ink"
+                }`}
+              >
+                {archiveGroupMode === mode && <Pill id="archive-pill" className="rounded-lg bg-white border border-line shadow-card" />}
+                <span className="relative">By {mode}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <motion.div
+          key={listKey}
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
+          className="flex flex-col gap-4"
+        >
+          {archiveGroups.length === 0
+            ? emptyStateBlock
+            : archiveGroups.map((group) => (
+                <div key={group.key} className="panel p-2">
+                  <div className="flex items-center gap-2 px-3 pt-2 pb-1.5">
+                    {archiveGroupMode === "folder" && (
+                      <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: group.color }} />
+                    )}
+                    <span className="text-sm font-bold text-ink">{group.label}</span>
+                    <span className="text-sm text-muted">({group.tasks.length})</span>
+                  </div>
+                  <AnimatePresence initial={false}>
+                    {group.tasks.map((task) => (
+                      <motion.div
+                        key={task.id}
+                        layout="position"
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0, height: 0 }}
+                        className="flex items-center gap-3 rounded-xl px-3 py-2 hover:bg-canvas transition-colors"
+                      >
+                        <motion.button
+                          onClick={() => toggleTask(task.id)}
+                          whileTap={{ scale: 0.82 }}
+                          title="Mark as not done"
+                          aria-label={`Mark "${task.title}" as not done`}
+                          className="flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-[5px] border-2 border-ink bg-ink text-white"
+                        >
+                          <Check size={11} strokeWidth={3} />
+                        </motion.button>
+                        <span className="flex-1 min-w-0 truncate text-sm text-ink/45 line-through">{task.title}</span>
+                        <span className="shrink-0 text-xs text-muted">{archiveRowMeta(task, archiveGroupMode)}</span>
+                      </motion.div>
+                    ))}
+                  </AnimatePresence>
+                </div>
+              ))}
+        </motion.div>
+      </section>
+    </div>
+  );
+
+  const MOBILE_TABS: { id: ViewMode; label: string; icon: LucideIcon }[] = [
+    { id: "Timeline", label: "Timeline", icon: CalendarDays },
+    { id: "Categories", label: "Folders", icon: Folder },
+    { id: "Completed", label: "Completed", icon: CheckSquare },
+  ];
+
+  return (
+    <div className="min-h-screen bg-canvas lg:h-screen lg:p-3">
+      <div className="lg:flex lg:h-full lg:rounded-[24px] lg:border lg:border-line lg:bg-white lg:shadow-card lg:overflow-hidden">
+        {sidebar}
+
+        <div className="flex-1 min-w-0 bg-white lg:h-full lg:overflow-y-auto scroll-thin">
+          {/* Top bar */}
+          <header className="sticky top-0 z-40 flex h-16 items-center justify-between gap-3 border-b border-line bg-white/90 px-4 backdrop-blur-md sm:px-6 lg:px-8">
+            <div className="lg:hidden">{brand}</div>
+            <p className="hidden lg:block text-lg font-bold text-ink">Today, {todayLabel}</p>
+            <div className="flex items-center gap-2 sm:gap-3">
+              <button onClick={handleWhatNow} className="btn-primary px-3 py-2 text-xs lg:hidden">
+                <Zap size={14} className="fill-current" />
+              </button>
+              <span className="hidden sm:inline-flex items-center gap-1.5 rounded-full border border-line px-3 py-1.5 text-xs font-semibold text-ink">
+                <span className="h-1.5 w-1.5 rounded-full bg-pink" />
+                <AnimatedNumber value={pendingTasks.length} className="tabular-nums" /> open
+              </span>
+              {profileMenu}
+            </div>
+          </header>
+
+          {/* Toasts */}
+          <div
+            className="fixed top-20 right-4 z-50 flex flex-col gap-2 w-[min(90vw,340px)]"
+            aria-live="polite"
+            aria-label="Notifications"
+          >
+            <AnimatePresence initial={false}>
+              {toasts.map((t) => {
+                const ToastIcon = t.tone === "error" ? AlertCircle : t.tone === "success" ? CheckCircle2 : Info;
+                return (
+                  <motion.div
+                    key={t.id}
+                    role="status"
+                    layout
+                    initial={{ opacity: 0, y: -8, scale: 0.96 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, x: 40 }}
+                    transition={{ type: "spring", stiffness: 420, damping: 30 }}
+                    className="flex items-start gap-2.5 rounded-xl border border-line bg-white px-4 py-3 text-sm font-medium text-ink shadow-pop"
+                  >
+                    <ToastIcon
+                      size={17}
+                      className={`mt-px shrink-0 ${t.tone === "error" ? "text-danger" : t.tone === "success" ? "text-mint-deep" : "text-ink/60"}`}
+                    />
+                    <span className="flex-1">{t.message}</span>
+                  </motion.div>
+                );
+              })}
+            </AnimatePresence>
+          </div>
+
+          <main className="mx-auto w-full max-w-6xl px-4 py-6 pb-28 sm:px-6 lg:px-8 lg:pb-10">
+            <AnimatePresence mode="wait" initial={false}>
+              <motion.div
+                key={activeView}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -6 }}
+                transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+              >
+                {activeView === "Timeline" ? timelineView : activeView === "Categories" ? foldersView : completedView}
+              </motion.div>
+            </AnimatePresence>
+          </main>
+        </div>
+      </div>
+
+      {/* Mobile bottom navigation */}
+      <nav
+        className="lg:hidden fixed inset-x-0 bottom-0 z-40 border-t border-line bg-white/95 backdrop-blur-md px-4 pt-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]"
+        aria-label="Views"
+      >
+        <div className="grid grid-cols-3 gap-1">
+          {MOBILE_TABS.map((tab) => {
+            const Icon = tab.icon;
+            const isActive = activeView === tab.id;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => setActiveView(tab.id)}
+                aria-current={isActive ? "page" : undefined}
+                className={`relative flex flex-col items-center gap-0.5 rounded-xl py-1.5 text-[11px] font-semibold transition-colors ${
+                  isActive ? "text-ink" : "text-muted"
+                }`}
+              >
+                {isActive && <Pill id="mobile-nav-pill" className="rounded-xl bg-canvas" />}
+                <Icon size={19} className="relative" />
+                <span className="relative">{tab.label}</span>
+              </button>
+            );
+          })}
+        </div>
+      </nav>
+
+      <AnimatePresence>
+        {focusedTask && (
+          <FocusModal
+            key={focusedTask.id}
+            task={focusedTask}
+            reason={focusReason}
+            onClose={() => {
+              setFocusedTaskId(null);
+              setFocusReason(null);
+            }}
+            onCompleteTask={(id) => {
+              toggleTask(id);
+              setFocusedTaskId(null);
+              setFocusReason(null);
+            }}
+            onToggleSubtask={toggleSubtask}
+          />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {receiptPayload && (
+          <ReceiptExport
+            key="receipt"
+            tasks={receiptPayload.tasks}
+            title={receiptPayload.title}
+            onClose={() => setReceiptPayload(null)}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }

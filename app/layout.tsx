@@ -1,19 +1,10 @@
 import type { Metadata } from "next";
-import { Chewy, Quicksand } from "next/font/google";
+import { Plus_Jakarta_Sans } from "next/font/google";
 import "./globals.css";
 
-// Bouncy, candy-like cursive for the Starboard wordmark
-const chewy = Chewy({
+const jakarta = Plus_Jakarta_Sans({
   subsets: ["latin"],
-  weight: "400",
-  variable: "--font-logo",
-  display: "swap",
-});
-
-// Clean, friendly body face for everything else
-const quicksand = Quicksand({
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
+  weight: ["400", "500", "600", "700", "800"],
   variable: "--font-body",
   display: "swap",
 });
@@ -21,7 +12,7 @@ const quicksand = Quicksand({
 export const metadata: Metadata = {
   title: "Starboard",
   description:
-    "A whimsical, AI-powered to-do list. Dump your messy brain, and Starboard sorts it out.",
+    "An AI-powered to-do list. Dump your messy brain, and Starboard sorts it out.",
 };
 
 export default function RootLayout({
@@ -30,8 +21,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className={`${chewy.variable} ${quicksand.variable}`}>
-      <body className="bg-dash-bg">{children}</body>
+    <html lang="en" className={jakarta.variable}>
+      <body className="bg-canvas">{children}</body>
     </html>
   );
 }
