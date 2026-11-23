@@ -55,7 +55,8 @@ import AnimatedNumber from "./ui/AnimatedNumber";
 const UNSCHEDULED = "unscheduled" as const;
 
 // Soft fade at the ends of the sideways-scrolling folder strip.
-const FADE_EDGES = "linear-gradient(to right, transparent, black 12px, black calc(100% - 24px), transparent)";
+// Right edge only - a left fade washed out the first card ("All tasks").
+const FADE_EDGES = "linear-gradient(to right, black calc(100% - 28px), transparent)";
 
 // A folder's dot color is picked by its position in the order folders
 // first appeared - stable as long as folders aren't reordered, which
@@ -1715,7 +1716,7 @@ export default function Dashboard({ onSignIn, onSignOut, userEmail }: DashboardP
           task list below stays in view however many folders there are. */}
       <div
         ref={folderStripRef}
-        className="-mx-4 px-4 sm:-mx-1 sm:px-1 -my-1 py-1 flex gap-3 overflow-x-auto snap-x snap-mandatory scroll-thin"
+        className="-mx-4 px-4 sm:mx-0 sm:px-0 pt-1 pb-3.5 flex gap-3 overflow-x-auto snap-x snap-mandatory scroll-thin"
         style={{ maskImage: FADE_EDGES, WebkitMaskImage: FADE_EDGES }}
       >
         {(["All", ...folderNames] as string[]).map((cat, i) => {
@@ -1734,12 +1735,25 @@ export default function Dashboard({ onSignIn, onSignOut, userEmail }: DashboardP
               whileHover={{ y: -2 }}
               transition={{ type: "spring", stiffness: 320, damping: 26, delay: Math.min(i, 8) * 0.025 }}
               title={cat === "All" ? "All tasks" : cat}
+              aria-pressed={isActive}
               data-folder={cat}
               className={`relative flex h-[88px] w-40 shrink-0 snap-start flex-col justify-between rounded-2xl px-3.5 py-3 text-left transition-shadow focus-visible:outline-none ${
-                isActive ? "ring-2 ring-ink ring-offset-2 ring-offset-white" : "hover:shadow-lift"
+                isActive ? "shadow-lift" : "hover:shadow-lift"
               }`}
               style={{ backgroundColor: color, color: cat === "All" ? "#fff" : "#18181B" }}
             >
+              {/* Selected marker: a small bar under the card, like a tab
+                  underline (a ring with a white gap looked like a glare on
+                  the black "All tasks" card). */}
+              {isActive && (
+                <motion.span
+                  aria-hidden="true"
+                  initial={{ scaleX: 0 }}
+                  animate={{ scaleX: 1 }}
+                  transition={{ type: "spring", stiffness: 500, damping: 30 }}
+                  className="absolute -bottom-2.5 left-1/2 -ml-5 h-1 w-10 rounded-full bg-ink"
+                />
+              )}
               <div className="flex items-start justify-between gap-2">
                 <p className="min-w-0 truncate text-sm font-extrabold leading-tight">{cat === "All" ? "All tasks" : cat}</p>
                 <span className="shrink-0 text-xs font-bold tabular-nums opacity-80">{stats.pending}</span>
