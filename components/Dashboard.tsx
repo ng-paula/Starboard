@@ -389,13 +389,18 @@ export default function Dashboard({ onSignIn, onSignOut, userEmail }: DashboardP
     return streak;
   }, [completedDateCounts]);
 
-  const last7Days = useMemo(() => {
-    const days: { iso: string; hasActivity: boolean; isToday: boolean }[] = [];
-    for (let i = 6; i >= 0; i--) {
-      const iso = toISODate(addDays(new Date(), -i));
-      days.push({ iso, hasActivity: completedDateCounts.has(iso), isToday: i === 0 });
-    }
-    return days;
+  // Streak strip: this week Monday -> Sunday, read left to right like the
+  // rest of the app's calendars. Days still to come are shown faded.
+  const streakWeek = useMemo(() => {
+    const todayIso = toISODate(new Date());
+    return getWeekDates(0).map((d) => ({
+      iso: d.iso,
+      letter: d.weekdayShort.charAt(0),
+      label: d.date.toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" }),
+      hasActivity: completedDateCounts.has(d.iso),
+      isToday: d.iso === todayIso,
+      isFuture: d.iso > todayIso,
+    }));
   }, [completedDateCounts]);
 
   // These are deliberately independent of weekOffset (which only moves
@@ -1992,16 +1997,32 @@ export default function Dashboard({ onSignIn, onSignOut, userEmail }: DashboardP
             <p className="mt-1 text-2xl font-extrabold text-ink">
               <AnimatedNumber value={currentStreak} /> <span className="text-sm font-semibold">day{currentStreak === 1 ? "" : "s"}</span>
             </p>
-            <div className="mt-2 flex gap-1">
-              {last7Days.map((d, i) => (
-                <motion.span
+            <div className="mt-2 grid grid-cols-7 gap-1" aria-label="This week">
+              {streakWeek.map((d, i) => (
+                <div
                   key={d.iso}
-                  title={d.iso}
-                  initial={{ scale: 0 }}
-                  animate={{ scale: 1 }}
-                  transition={{ delay: 0.05 * i, type: "spring", stiffness: 500, damping: 20 }}
-                  className={`h-3 flex-1 rounded-[4px] ${d.hasActivity ? (d.isToday ? "bg-ink" : "bg-pink") : "bg-white/80"}`}
-                />
+                  className="flex flex-col items-center gap-1"
+                  title={`${d.label}${d.isFuture ? "" : d.hasActivity ? " · finished something" : " · nothing finished"}`}
+                >
+                  <motion.span
+                    initial={{ scaleX: 0 }}
+                    animate={{ scaleX: 1 }}
+                    transition={{ delay: 0.05 * i, type: "spring", stiffness: 500, damping: 24 }}
+                    style={{ originX: 0 }}
+                    className={`h-3 w-full rounded-[4px] ${
+                      d.hasActivity
+                        ? d.isToday
+                          ? "bg-ink"
+                          : "bg-pink"
+                        : d.isFuture
+                        ? "border border-dashed border-ink/15 bg-transparent"
+                        : "bg-white/80"
+                    }`}
+                  />
+                  <span className={`text-[10px] leading-none ${d.isToday ? "font-bold text-ink" : "font-medium text-ink/50"}`}>
+                    {d.letter}
+                  </span>
+                </div>
               ))}
             </div>
           </div>

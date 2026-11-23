@@ -1,109 +1,122 @@
-# Starboard ✨
+# Starboard
 
-A whimsical, AI-powered to-do list. Land on a Y2K-scrapbook folder, hit
-**Start Listing**, and untangle your to-dos — either one at a time, or by
-dumping your whole messy brain into the ✨ Sparkle box and letting Gemini
-sort it into structured, prioritized tasks.
+An AI-powered to-do list. Dump your messy brain into one box and Starboard
+sorts it into tasks, folders and time estimates, then helps you work through
+them with a weekly timeline and a focus timer.
+
+**Live:** [starboard-neon.vercel.app](https://starboard-neon.vercel.app) — no sign-up needed to try it.
+
+## Features
+
+- **No sign-up required.** The app opens straight to the dashboard. As a guest,
+  tasks are saved in your browser; sign in whenever you want them synced, and
+  anything you made as a guest moves into your account automatically.
+- **AI brain dump.** Type everything on your mind; Gemini splits it into tasks
+  with priority, energy level, a time estimate, and Today / Tomorrow dates when
+  you mention them. It files tasks into your existing folders and only creates
+  a new one when nothing fits. Inside a folder, everything lands in that folder.
+- **Timeline.** Overdue / Today / Tomorrow / Later / Unscheduled groups, a week
+  strip, and a date picker with quick picks plus a month calendar.
+- **Folders.** Colour-coded folder cards with progress, drag-and-drop filing,
+  rename and delete (tasks move to Inbox), and a folder dropdown on every task.
+- **Focus mode.** "What should I do now?" picks your next task; a timer with
+  presets, steps checklist, and a "Stuck?" button that suggests a tiny first move.
+- **Optimize flow.** AI reorders a day's (or folder's) tasks into a sensible
+  sequence — it only changes the order, never the task data.
+- **Completed.** Streak for the current week, weekly stats, personal best, and
+  grouping by day, week or folder.
+- **Receipt export.** Download any list as a clean PNG "receipt".
+
+## Tech stack
+
+- [Next.js 14](https://nextjs.org) (App Router) + React 18 + TypeScript
+- Tailwind CSS + Framer Motion
+- [Zustand](https://github.com/pmndrs/zustand) for state (optimistic updates)
+- [Supabase](https://supabase.com) for auth and Postgres (row-level security)
+- [Gemini API](https://ai.google.dev) via `@google/genai` (server-side only)
+- Deployed on [Vercel](https://vercel.com)
 
 ## Project structure
 
 ```
-starboard-app/
-├── app/
-│   ├── page.tsx              # Landing ⇄ Dashboard, crossfaded with Framer Motion
-│   ├── layout.tsx            # Root layout, loads Chewy (logo) + Quicksand (body)
-│   ├── globals.css
-│   └── api/
-│       ├── parse/route.ts    # POST { text } → { tasks: ParsedTask[] }
-│       └── breakdown/route.ts# POST { title } → { steps: string[] }
-├── components/
-│   ├── Landing.tsx            # Striped background, pink folder, decorations
-│   ├── Dashboard.tsx          # Minimalist task workspace
-│   ├── TaskCard.tsx           # Checklist item + "✨ Break Down" on hover
-│   ├── SparkleInput.tsx       # Dual-mode input: Enter-to-add / brain-dump textarea
-│   ├── ReceiptExport.tsx      # "Receipt" PNG export via html-to-image
-│   └── ScrapbookDecor.tsx     # Inline SVG binder clip, sewing button, star field
-├── hooks/
-│   └── useTasks.ts            # localStorage-backed task state (guest-first)
-├── lib/
-│   ├── gemini.ts               # Server-only Gemini client (never imported client-side)
-│   └── types.ts
-└── .env.local.example
+app/
+  page.tsx                 # Entry: dashboard for guests and signed-in users
+  login/, signup/          # Auth pages (server actions)
+  auth/callback/route.ts   # Email-confirmation link handler
+  api/
+    parse/route.ts         # Brain dump -> structured tasks
+    optimize/route.ts      # Reorder tasks into a better flow
+    stuck/route.ts         # One tiny next step for a task
+    keepalive/route.ts     # Daily ping so the Supabase free tier doesn't pause
+  icon.svg                 # Favicon
+components/
+  Dashboard.tsx            # Sidebar layout and the Timeline / Folders / Completed views
+  TaskCard.tsx             # Task card + compact row, date picker, folder menu
+  FocusModal.tsx           # Focus timer
+  ReceiptExport.tsx        # PNG export
+  AuthShell.tsx            # Shared login/signup layout
+  ui/                      # MiniCalendar, ProgressRing, AnimatedNumber, FadeIn
+store/useTaskStore.ts      # Tasks + folders; localStorage for guests, Supabase when signed in
+hooks/useBrainDump.ts      # Calls /api/parse and adds the results
+lib/
+  supabase/                # Browser/server clients; safe fallback if env vars are missing
+  aiErrors.ts, aiRateLimit.ts
+  dates.ts, types.ts
+supabase/schema.sql        # Tables + row-level security policies
+vercel.json                # Daily cron for /api/keepalive
 ```
 
-No external image assets are required — the binder clip, sewing button, washi
-tape, and stars are all inline SVG components in `ScrapbookDecor.tsx`, so
-there's nothing to source or drop into `public/` before it runs.
+## Run it locally
 
-## 1. Install
+1. Install dependencies:
 
-```bash
-npx create-next-app@latest starboard-app # if starting from scratch — skip if you already have this folder
-cd starboard-app
-npm install
-```
+   ```bash
+   npm install
+   ```
 
-(This folder already has `package.json` wired up with `framer-motion`,
-`@google/generative-ai`, `html-to-image`, and `lucide-react` — `npm install`
-is all you need.)
+2. Create `.env.local` from the example and fill in your keys:
 
-## 2. Add your Gemini API key
+   ```bash
+   cp .env.example .env.local
+   ```
 
-```bash
-cp .env.local.example .env.local
-```
+   | Variable | Where to get it |
+   | --- | --- |
+   | `GEMINI_API_KEY` | [Google AI Studio](https://aistudio.google.com/apikey). Server-only, never sent to the browser. |
+   | `NEXT_PUBLIC_SUPABASE_URL` | Supabase → Project Settings → API |
+   | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Same page (the public "anon" key — never the `service_role` key) |
 
-Open `.env.local` and paste in your real key:
+   Without the Supabase variables the app still runs, in guest-only mode.
 
-```
-GEMINI_API_KEY=your_actual_key_here
-```
+3. Set up the database: in the Supabase dashboard open **SQL Editor**, paste
+   in `supabase/schema.sql`, and run it.
 
-`.env.local` is already in `.gitignore`. Because the variable is **not**
-prefixed with `NEXT_PUBLIC_`, Next.js keeps it server-only — it's read in
-`lib/gemini.ts`, which is only ever imported from files under `app/api/**`
-(Route Handlers), never from a Client Component. That's what keeps the key
-out of the browser bundle.
+4. Start the dev server:
 
-Get a key at [aistudio.google.com/app/apikey](https://aistudio.google.com/app/apikey)
-if you don't have one yet.
+   ```bash
+   npm run dev
+   ```
 
-## 3. Run it locally
+   Open [localhost:3000](http://localhost:3000).
 
-```bash
-npm run dev
-```
+## Deploy to Vercel
 
-Open [localhost:3000](http://localhost:3000). Click **Start Listing**, add a
-task normally, or toggle **✨ Sparkle** and paste something like:
+1. Import the GitHub repo in Vercel.
+2. Add the three environment variables above (Production and Preview).
+   Optionally add `CRON_SECRET` (any long random string) to protect `/api/keepalive`.
+3. Deploy. Pushes to `main` deploy automatically.
+4. In Supabase → **Authentication → URL Configuration**, set the Site URL to
+   your Vercel address and add it (plus `http://localhost:3000/**`) to the
+   Redirect URLs.
 
-> call the dentist tomorrow, finish the slide deck before Friday's review,
-> maybe reorganize the garage this weekend
+## Notes
 
-Hover a task card to reveal **✨ Break Down** for AI-generated sub-steps, and
-use **Export receipt** to download the day's list as a sticky-note PNG.
-
-## 4. Deploy to Vercel
-
-1. Push this folder to a new GitHub repository.
-2. Go to [vercel.com](https://vercel.com) → **Add New Project** → import the repo.
-3. Before clicking **Deploy**, open **Environment Variables** and add:
-   - Name: `GEMINI_API_KEY`
-   - Value: your real key
-4. Click **Deploy**.
-
-Because the key is set as a Vercel environment variable (not baked into the
-repo), it stays private in the deployed build too.
-
-## Notes on the two AI routes
-
-- **`/api/parse`** — takes a raw brain-dump string, prompts
-  `gemini-2.5-flash` with `responseMimeType: "application/json"`, and
-  returns an array of `{ title, priority, estimated_minutes }`.
-- **`/api/breakdown`** — takes one task title and returns
-  `{ steps: string[] }`, 3–5 concrete sub-steps.
-
-Both routes: validate the request body, catch a missing `GEMINI_API_KEY`
-and report it as a clear 500 (rather than a confusing crash), and catch
-malformed JSON from the model and report it as a 502 so the UI can show a
-friendly retry message instead of hanging.
+- **AI limits.** On Gemini's free tier the API allows a small number of
+  requests per day, shared by all visitors. Each visitor is also limited to
+  10 AI requests per hour. When either limit is hit, the app shows a clear
+  message and everything else keeps working.
+- **Supabase free tier.** Projects pause after about a week without activity;
+  the daily `/api/keepalive` cron prevents that. If it ever pauses anyway,
+  the app falls back to guest mode until the project is restored.
+- **Email confirmation** is optional. If it's on in Supabase, sign-up shows a
+  "check your inbox" screen with a resend option.
