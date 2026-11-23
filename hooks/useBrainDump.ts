@@ -35,11 +35,24 @@ export function useBrainDump() {
   // dumping from inside a folder) instead of the folder the AI picked.
   const parseText = async (rawText: string, options?: { category?: string }): Promise<ParseTextResult> => {
     setIsLoadingAi(true);
+    // Folders the user already has, read fresh from the store, so the AI
+    // can reuse them instead of inventing near-duplicates.
+    const { tasks, customCategories } = useTaskStore.getState();
+    const existingFolders = Array.from(
+      new Set(["Inbox", ...(tasks.map((t) => t.category).filter(Boolean) as string[]), ...customCategories])
+    );
+    // Safety net for the AI's answer: "personal" -> the existing "Personal".
+    const toExistingFolder = (name: unknown): string => {
+      const trimmed = typeof name === "string" ? name.trim() : "";
+      if (!trimmed) return "Inbox";
+      return existingFolders.find((f) => f.toLowerCase() === trimmed.toLowerCase()) || trimmed;
+    };
     try {
       const res = await fetch("/api/parse", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt: rawText }),
+        // Not needed when a folder is forced - the AI's choice is ignored.
+        body: JSON.stringify({ prompt: rawText, folders: options?.category ? [] : existingFolders }),
       });
       const data = await res.json();
 
@@ -63,7 +76,7 @@ export function useBrainDump() {
           priority: t.priority,
           energy_level: t.energy_level,
           estimated_minutes: t.estimated_minutes,
-          category: options?.category || t.category,
+          category: options?.category || toExistingFolder(t.category),
           due_date: dueHintToDate(t.due_hint),
           subtasks: []
         }));

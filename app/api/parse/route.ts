@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { aiErrorResponse } from "@/lib/aiErrors";
 import { GoogleGenAI, Type } from "@google/genai";
 import { z } from "zod";
 
@@ -21,16 +22,39 @@ export async function POST(req: Request) {
     if (!apiKey) return NextResponse.json({ error: "Missing API Key" }, { status: 500 });
 
     const ai = new GoogleGenAI({ apiKey });
-    const { prompt } = await req.json();
+    const { prompt, folders } = await req.json();
 
     if (!prompt || typeof prompt !== "string" || !prompt.trim()) {
       return NextResponse.json({ error: "Prompt is required" }, { status: 400 });
     }
 
+    // The user's existing folders, so the AI files tasks into them instead
+    // of inventing near-duplicates ("Personal" vs "Life" vs "Home stuff").
+    // Sanitised: strings only, trimmed, capped in count and length.
+    const existingFolders: string[] = Array.isArray(folders)
+      ? Array.from(
+          new Set(
+            folders
+              .filter((f: unknown): f is string => typeof f === "string")
+              .map((f) => f.trim().slice(0, 50))
+              .filter(Boolean)
+          )
+        ).slice(0, 60)
+      : [];
+
+    const folderRules =
+      existingFolders.length > 0
+        ? `The user already has these folders: ${JSON.stringify(existingFolders)}.
+      For each task's category, use one of these existing folder names EXACTLY as written whenever the task reasonably fits one.
+      Only create a new category when none of the existing folders fit at all; keep new names short (1-2 words) and general (e.g. "Fitness", not "Gym on Tuesday").
+      Use "Inbox" only if nothing fits and no sensible new folder exists.`
+        : `The user has no folders yet. Give each task a short, general category (1-2 words, e.g. "Work", "School", "Personal", "Errands"), reusing the same category for related tasks.`;
+
     const response = await ai.models.generateContent({
       model: "gemini-3.6-flash",
       contents: `You are a productivity assistant. Extract tasks from this text: "${prompt}".
-      Determine their priority, energy level, a category (e.g., SIKAPTala, Research, Personal), and an estimated time in minutes. If they mention doing it today or tonight, set due_hint to "Today". If tomorrow, "Tomorrow". Otherwise "Later".`,
+      Determine their priority, energy level, a category, and an estimated time in minutes. If they mention doing it today or tonight, set due_hint to "Today". If tomorrow, "Tomorrow". Otherwise "Later".
+      ${folderRules}`,
       config: {
         responseMimeType: "application/json",
         responseSchema: {
@@ -66,6 +90,6 @@ export async function POST(req: Request) {
     return NextResponse.json(validatedData);
   } catch (error: any) {
     console.error("Parse Error:", error);
-    return NextResponse.json({ error: "Failed to parse tasks." }, { status: 500 });
+    return aiErrorResponse(error, "Failed to parse tasks.");
   }
 }

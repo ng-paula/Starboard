@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { aiErrorResponse } from "@/lib/aiErrors";
 import { GoogleGenAI } from "@google/genai";
 
 export async function POST(req: Request) {
@@ -32,6 +33,6 @@ Reply with just that one sentence, under 20 words, no quotation marks, no preamb
     return NextResponse.json({ tip });
   } catch (error) {
     console.error("Feeling-stuck tip error:", error);
-    return NextResponse.json({ error: "Failed to get a tip." }, { status: 500 });
+    return aiErrorResponse(error, "Failed to get a tip.");
   }
 }

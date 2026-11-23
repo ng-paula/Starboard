@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { aiErrorResponse } from "@/lib/aiErrors";
 import { GoogleGenAI, Type } from "@google/genai";
 import { z } from "zod";
 
@@ -78,6 +79,6 @@ export async function POST(req: Request) {
     return NextResponse.json(validatedData);
   } catch (error: any) {
     console.error("Optimizer Error:", error);
-    return NextResponse.json({ error: error?.message || "Failed to optimize flow." }, { status: 500 });
+    return aiErrorResponse(error, "Failed to optimize flow.");
   }
 }
