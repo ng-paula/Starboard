@@ -2,10 +2,11 @@
 
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Check, Play, Trash2, Clock, Zap, ChevronDown, Plus, Calendar, ListChecks } from "lucide-react";
+import { Check, Play, Trash2, Clock, Zap, ChevronDown, Plus, Calendar, ListChecks, FolderPlus } from "lucide-react";
 import type { Task } from "@/lib/types";
 import { useTaskStore } from "@/store/useTaskStore";
-import { formatShortDate, toISODate, addDays } from "@/lib/dates";
+import { formatDueDate, toISODate, addDays } from "@/lib/dates";
+import MiniCalendar from "./ui/MiniCalendar";
 
 interface TaskCardProps {
   task: Task;
@@ -22,6 +23,8 @@ interface TaskCardProps {
   draggable?: boolean;
   // Dot colour for the folder label, so cards match the sidebar.
   folderColor?: string;
+  // Colour for any folder (used by the "move to folder" menu).
+  folderColorOf?: (category: string) => string;
 }
 
 // Square checkbox (as in the reference design) with a small pop + ring
@@ -90,6 +93,7 @@ export default function TaskCard({
   emphasizeSchedule = false,
   draggable = false,
   folderColor,
+  folderColorOf,
 }: TaskCardProps) {
   const {
     toggleTask,
@@ -100,14 +104,25 @@ export default function TaskCard({
     setDueDate,
     updateTaskTitle,
     setEstimatedMinutes,
+    addCategory,
+    tasks: allTasks,
+    customCategories,
   } = useTaskStore();
 
   const [isExpanded, setIsExpanded] = useState(false);
   const [newSubtaskTitle, setNewSubtaskTitle] = useState("");
   const [isAddingSubtask, setIsAddingSubtask] = useState(false);
 
-  const [isEditingCategory, setIsEditingCategory] = useState(false);
-  const [categoryInput, setCategoryInput] = useState(task.category || "Inbox");
+  // "Move to folder" menu: pick an existing folder, or explicitly create
+  // a new one (typing a name used to create a folder on every typo).
+  const [isFolderMenuOpen, setIsFolderMenuOpen] = useState(false);
+  const [isCreatingFolder, setIsCreatingFolder] = useState(false);
+  const [newFolderName, setNewFolderName] = useState("");
+  const folderMenuRef = useRef<HTMLDivElement>(null);
+  const folderOptions = useMemo(() => {
+    const fromTasks = allTasks.map((t) => t.category).filter(Boolean) as string[];
+    return Array.from(new Set(["Inbox", ...fromTasks, ...customCategories]));
+  }, [allTasks, customCategories]);
 
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [titleInput, setTitleInput] = useState(task.title);
@@ -118,20 +133,8 @@ export default function TaskCard({
   const [isEditingDueDate, setIsEditingDueDate] = useState(false);
   const todayIso = toISODate(new Date());
   const tomorrowIso = toISODate(addDays(new Date(), 1));
-  // The next 5 days after tomorrow, generated directly rather than
-  // derived from a Mon-Sun week array - deriving it from "whatever's
-  // left of this calendar week" went empty every Saturday/Sunday.
-  const upcomingDays = useMemo(() => {
-    return Array.from({ length: 5 }).map((_, i) => {
-      const date = addDays(new Date(), i + 2);
-      return {
-        iso: toISODate(date),
-        weekdayShort: date.toLocaleDateString(undefined, { weekday: "short" }),
-        dayNum: date.getDate(),
-      };
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [todayIso]);
+  // "Next week" = the coming Monday (always 1-7 days away).
+  const nextMondayIso = toISODate(addDays(new Date(), ((8 - new Date().getDay()) % 7) || 7));
 
   const dueDateRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -195,13 +198,43 @@ export default function TaskCard({
     setIsAddingSubtask(false);
   };
 
-  const handleCategorySubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (categoryInput.trim()) {
-      moveCategory(task.id, categoryInput.trim());
-    }
-    setIsEditingCategory(false);
+  const closeFolderMenu = () => {
+    setIsFolderMenuOpen(false);
+    setIsCreatingFolder(false);
+    setNewFolderName("");
   };
+
+  const pickFolder = (name: string) => {
+    if (name !== (task.category || "Inbox")) moveCategory(task.id, name);
+    closeFolderMenu();
+  };
+
+  const handleCreateFolder = (e: React.FormEvent) => {
+    e.preventDefault();
+    const name = newFolderName.trim();
+    if (!name) return;
+    // Reuse an existing folder that only differs in capitalisation
+    // ("work" vs "Work") instead of creating a near-duplicate.
+    const existing = folderOptions.find((f) => f.toLowerCase() === name.toLowerCase());
+    if (!existing) addCategory(name);
+    pickFolder(existing || name);
+  };
+
+  useEffect(() => {
+    if (!isFolderMenuOpen) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (folderMenuRef.current && !folderMenuRef.current.contains(e.target as Node)) closeFolderMenu();
+    };
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") closeFolderMenu();
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    document.addEventListener("keydown", handleKey);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("keydown", handleKey);
+    };
+  }, [isFolderMenuOpen]);
 
   const handleTitleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -225,6 +258,14 @@ export default function TaskCard({
     setIsEditingMinutes(false);
   };
 
+  const quickDates = [
+    { iso: todayIso, label: "Today" },
+    { iso: tomorrowIso, label: "Tomorrow" },
+    { iso: nextMondayIso, label: "Next week" },
+  ];
+
+  // Quick picks + a month calendar for any future day. Compact rows sit
+  // near the right edge, so their menu opens leftwards.
   const dueDateDropdown = (
     <motion.div
       ref={dueDateRef}
@@ -232,41 +273,36 @@ export default function TaskCard({
       animate={{ opacity: 1, y: 0, scale: 1 }}
       exit={{ opacity: 0, y: -4, scale: 0.97, transition: { duration: 0.1 } }}
       transition={{ type: "spring", stiffness: 500, damping: 32 }}
-      className="absolute z-30 top-full left-0 mt-1.5 w-40 origin-top-left rounded-xl bg-white border border-line shadow-pop p-1 flex flex-col"
+      className={`absolute z-30 top-full mt-1.5 w-64 rounded-xl bg-white border border-line shadow-pop p-1.5 flex flex-col ${
+        compact ? "right-0 origin-top-right" : "left-0 origin-top-left"
+      }`}
     >
-      {[
-        { iso: todayIso, label: "Today" },
-        { iso: tomorrowIso, label: "Tomorrow" },
-      ].map((opt) => (
+      <div className="grid grid-cols-3 gap-1 pb-1.5">
+        {quickDates.map((opt) => (
+          <button
+            key={opt.label}
+            type="button"
+            onClick={() => pickDueDate(opt.iso)}
+            className={`rounded-lg px-1 py-1.5 text-[11px] font-semibold transition-colors ${
+              task.due_date === opt.iso ? "bg-ink text-white" : "bg-canvas text-ink hover:bg-line"
+            }`}
+          >
+            {opt.label}
+          </button>
+        ))}
+      </div>
+      <div className="border-t border-line pt-1.5">
+        <MiniCalendar value={task.due_date} onPick={pickDueDate} />
+      </div>
+      {task.due_date && (
         <button
-          key={opt.label}
           type="button"
-          onClick={() => pickDueDate(opt.iso)}
-          className="flex items-center justify-between px-2.5 py-1.5 rounded-lg text-left text-xs font-medium text-ink hover:bg-canvas transition-colors"
+          onClick={() => pickDueDate(null)}
+          className="mt-1 rounded-lg border-t border-line px-2.5 pt-2 pb-1 text-left text-xs font-medium text-danger hover:bg-danger/5 transition-colors"
         >
-          {opt.label} {task.due_date === opt.iso && <Check size={12} />}
+          Remove date
         </button>
-      ))}
-      <div className="my-1 border-t border-line" />
-      <span className="px-2.5 pt-0.5 pb-1 text-[10px] font-semibold uppercase tracking-wide text-muted">Upcoming</span>
-      {upcomingDays.map((day) => (
-        <button
-          key={day.iso}
-          type="button"
-          onClick={() => pickDueDate(day.iso)}
-          className="flex items-center justify-between px-2.5 py-1.5 rounded-lg text-left text-xs font-medium text-ink hover:bg-canvas transition-colors"
-        >
-          {day.weekdayShort} {day.dayNum} {task.due_date === day.iso && <Check size={12} />}
-        </button>
-      ))}
-      <div className="my-1 border-t border-line" />
-      <button
-        type="button"
-        onClick={() => pickDueDate(null)}
-        className="px-2.5 py-1.5 rounded-lg text-left text-xs font-medium text-danger hover:bg-danger/5 transition-colors"
-      >
-        No date
-      </button>
+      )}
     </motion.div>
   );
 
@@ -279,7 +315,7 @@ export default function TaskCard({
     animate: { opacity: 1, y: 0 },
     exit: { opacity: 0, height: 0, marginTop: 0, transition: { duration: 0.25, delay: 0.2 } },
     transition: { type: "spring" as const, stiffness: 320, damping: 30 },
-    className: `relative ${isEditingDueDate ? "z-30" : "z-0"}`,
+    className: `relative ${isEditingDueDate || isFolderMenuOpen ? "z-30" : "z-0"}`,
   };
 
   const actionButtons = (size: number) => (
@@ -370,7 +406,7 @@ export default function TaskCard({
                   className="inline-flex items-center gap-1 rounded-lg border border-dashed border-ink/25 px-2 py-0.5 text-[11px] font-semibold text-ink/70 hover:border-ink/50 hover:text-ink transition-colors"
                   title="Schedule this task"
                 >
-                  <Calendar size={11} /> {task.due_date ? formatShortDate(task.due_date) : "Schedule"}
+                  <Calendar size={11} /> {task.due_date ? formatDueDate(task.due_date) : "Schedule"}
                 </button>
               ) : (
                 <button
@@ -408,29 +444,82 @@ export default function TaskCard({
       >
         {/* Top line: folder · status · checkbox */}
         <div className="flex items-center gap-2">
-          {isEditingCategory ? (
-            <form onSubmit={handleCategorySubmit} className="inline-flex">
-              <input
-                autoFocus
-                type="text"
-                value={categoryInput}
-                onChange={(e) => setCategoryInput(e.target.value)}
-                onBlur={handleCategorySubmit}
-                className="rounded-md border border-line bg-white px-2 py-0.5 text-xs text-ink outline-none focus:border-ink/40 w-32"
-                placeholder="Folder name..."
-              />
-            </form>
-          ) : (
+          <div className="relative" ref={folderMenuRef}>
             <button
-              onClick={() => !task.completed && setIsEditingCategory(true)}
+              onClick={() => !task.completed && (isFolderMenuOpen ? closeFolderMenu() : setIsFolderMenuOpen(true))}
               disabled={task.completed}
-              className="inline-flex items-center gap-1.5 rounded-md px-1 -mx-1 py-0.5 text-xs font-medium text-muted hover:bg-canvas hover:text-ink transition-colors disabled:pointer-events-none"
+              aria-haspopup="menu"
+              aria-expanded={isFolderMenuOpen}
+              className={`inline-flex items-center gap-1.5 rounded-md px-1 -mx-1 py-0.5 text-xs font-medium transition-colors disabled:pointer-events-none ${
+                isFolderMenuOpen ? "bg-canvas text-ink" : "text-muted hover:bg-canvas hover:text-ink"
+              }`}
               title="Move to another folder"
             >
               <span className="h-2 w-2 rounded-full" style={{ backgroundColor: folderColor || "#A1A1AA" }} />
               Folder: <span className="text-ink/80">{task.category || "Inbox"}</span>
+              {!task.completed && <ChevronDown size={12} className={`transition-transform ${isFolderMenuOpen ? "rotate-180" : ""}`} />}
             </button>
-          )}
+
+            <AnimatePresence>
+              {isFolderMenuOpen && (
+                <motion.div
+                  role="menu"
+                  initial={{ opacity: 0, y: -4, scale: 0.97 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: -4, scale: 0.97, transition: { duration: 0.1 } }}
+                  transition={{ type: "spring", stiffness: 500, damping: 32 }}
+                  className="absolute left-0 top-full z-30 mt-1.5 w-56 origin-top-left rounded-xl border border-line bg-white p-1.5 shadow-pop"
+                >
+                  <p className="px-2 pb-1 pt-0.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-muted">Move to folder</p>
+                  <div className="max-h-56 overflow-y-auto scroll-thin">
+                    {folderOptions.map((name) => {
+                      const isCurrent = name === (task.category || "Inbox");
+                      return (
+                        <button
+                          key={name}
+                          role="menuitem"
+                          type="button"
+                          onClick={() => pickFolder(name)}
+                          className={`flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs transition-colors ${
+                            isCurrent ? "bg-canvas font-semibold text-ink" : "font-medium text-ink/80 hover:bg-canvas hover:text-ink"
+                          }`}
+                        >
+                          <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: folderColorOf?.(name) || "#A1A1AA" }} />
+                          <span className="min-w-0 flex-1 truncate">{name}</span>
+                          {isCurrent && <Check size={12} />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <div className="mt-1 border-t border-line pt-1">
+                    {isCreatingFolder ? (
+                      <form onSubmit={handleCreateFolder} className="flex items-center gap-1.5 p-1">
+                        <input
+                          autoFocus
+                          value={newFolderName}
+                          onChange={(e) => setNewFolderName(e.target.value)}
+                          placeholder="New folder name..."
+                          aria-label="New folder name"
+                          className="min-w-0 flex-1 rounded-lg border border-line bg-white px-2 py-1.5 text-xs outline-none focus:border-ink/30"
+                        />
+                        <button type="submit" disabled={!newFolderName.trim()} className="btn-primary px-2.5 py-1.5 text-[11px]">
+                          Create
+                        </button>
+                      </form>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setIsCreatingFolder(true)}
+                        className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs font-semibold text-ink/70 hover:bg-canvas hover:text-ink"
+                      >
+                        <FolderPlus size={13} /> New folder
+                      </button>
+                    )}
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
 
           <div className="ml-auto flex items-center gap-3">
             {status && (
@@ -510,7 +599,7 @@ export default function TaskCard({
               className={`${metaBtn} ${isOverdue ? "!text-danger" : ""}`}
               title="Schedule this task"
             >
-              <Calendar size={13} /> {task.due_date ? formatShortDate(task.due_date) : "No date"}
+              <Calendar size={13} /> {task.due_date ? formatDueDate(task.due_date) : "No date"}
             </button>
             <AnimatePresence>{isEditingDueDate && dueDateDropdown}</AnimatePresence>
           </div>

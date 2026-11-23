@@ -88,3 +88,19 @@ export function formatShortWeekdayDate(iso: string): string {
   const date = new Date(y, m - 1, d);
   return date.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
 }
+
+// Label for a task's due date: weekday for the coming week ("Sun 29"),
+// month + day beyond that ("Dec 14"), and the year too if it's not this
+// year ("Jan 3, 2027") - so far-off dates picked from the calendar are
+// never ambiguous.
+export function formatDueDate(iso: string): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  const date = new Date(y, m - 1, d);
+  const today = new Date();
+  const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const daysAway = Math.round((date.getTime() - startOfToday.getTime()) / 86400000);
+  if (daysAway >= 0 && daysAway < 7) return formatShortDate(iso);
+  const opts: Intl.DateTimeFormatOptions = { month: "short", day: "numeric" };
+  if (y !== today.getFullYear()) opts.year = "numeric";
+  return date.toLocaleDateString(undefined, opts);
+}

@@ -118,6 +118,8 @@ interface TaskState {
   setDueDate: (taskId: string, dueDate: string | null) => void;
   addCategory: (name: string) => void;
   renameCategory: (oldName: string, newName: string) => void;
+  // Removes a folder; its tasks are kept and moved to Inbox.
+  deleteCategory: (name: string) => void;
   updateTaskTitle: (taskId: string, title: string) => void;
   setEstimatedMinutes: (taskId: string, minutes: number) => void;
   reorderTasks: (sortedTasks: Task[]) => void;
@@ -348,6 +350,20 @@ export const useTaskStore = create<TaskState>((set, get) => {
           // No-ops harmlessly if this folder never had an empty-folder row
           // (i.e. it only ever existed because tasks used it).
           supabase.from('categories').update({ name: newName }).eq('name', oldName),
+        ]).then(([a, b]) => ({ error: a.error || b.error }))
+      );
+    },
+
+    deleteCategory: (name) => {
+      if (name === 'Inbox') return;
+      set((state) => ({
+        tasks: state.tasks.map((t) => (t.category === name ? { ...t, category: 'Inbox' } : t)),
+        customCategories: state.customCategories.filter((c) => c !== name),
+      }));
+      remote('deleting folder', () =>
+        Promise.all([
+          supabase.from('tasks').update({ category: 'Inbox' }).eq('category', name),
+          supabase.from('categories').delete().eq('name', name),
         ]).then(([a, b]) => ({ error: a.error || b.error }))
       );
     },

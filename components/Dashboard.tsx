@@ -53,6 +53,9 @@ import AnimatedNumber from "./ui/AnimatedNumber";
 
 const UNSCHEDULED = "unscheduled" as const;
 
+// Soft fade at the ends of the sideways-scrolling folder strip.
+const FADE_EDGES = "linear-gradient(to right, transparent, black 12px, black calc(100% - 24px), transparent)";
+
 // A folder's dot color is picked by its position in the order folders
 // first appeared - stable as long as folders aren't reordered, which
 // they never are (there's no reorder UI for folders).
@@ -156,6 +159,7 @@ export default function Dashboard({ onSignIn, onSignOut, userEmail }: DashboardP
     toggleSubtask,
     moveCategory,
     renameCategory,
+    deleteCategory,
     addCategory,
     loadTasks,
     isLoading,
@@ -216,6 +220,23 @@ export default function Dashboard({ onSignIn, onSignOut, userEmail }: DashboardP
   const [dragTarget, setDragTarget] = useState<string | null>(null);
   // Sidebar "Folders" section collapse.
   const [foldersOpen, setFoldersOpen] = useState(true);
+  // Folder strip (Folders view): horizontally scrolling row of cards.
+  const folderStripRef = useRef<HTMLDivElement>(null);
+  const scrollFolders = (dir: 1 | -1) =>
+    folderStripRef.current?.scrollBy({ left: dir * folderStripRef.current.clientWidth * 0.8, behavior: "smooth" });
+  // Keep the open folder's card in view (e.g. when it was picked from
+  // the sidebar and sits far along the strip).
+  useEffect(() => {
+    if (activeView !== "Categories") return;
+    const strip = folderStripRef.current;
+    const card = strip?.querySelector<HTMLElement>(`[data-folder="${CSS.escape(activeCategory)}"]`);
+    if (!strip || !card) return;
+    const target = card.offsetLeft - strip.clientWidth / 2 + card.clientWidth / 2;
+    strip.scrollTo({ left: Math.max(0, target), behavior: "smooth" });
+  }, [activeCategory, activeView]);
+  // Two-click confirm for deleting the open folder.
+  const [confirmingDeleteFolder, setConfirmingDeleteFolder] = useState(false);
+  const deleteFolderTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Archive (Completed view): how the finished-task list is grouped.
   const [archiveGroupMode, setArchiveGroupMode] = useState<"day" | "week" | "folder">("day");
@@ -671,6 +692,25 @@ export default function Dashboard({ onSignIn, onSignOut, userEmail }: DashboardP
     setIsRenamingFolder(false);
   };
 
+  const handleDeleteFolder = () => {
+    if (activeCategory === "All" || activeCategory === "Inbox") return;
+    if (!confirmingDeleteFolder) {
+      setConfirmingDeleteFolder(true);
+      deleteFolderTimeoutRef.current = setTimeout(() => setConfirmingDeleteFolder(false), 3000);
+      return;
+    }
+    if (deleteFolderTimeoutRef.current) clearTimeout(deleteFolderTimeoutRef.current);
+    setConfirmingDeleteFolder(false);
+    const name = activeCategory;
+    const moved = categoryCounts.get(name) || 0;
+    deleteCategory(name);
+    setActiveCategory("All");
+    pushToast(
+      moved > 0 ? `Deleted "${name}". ${moved} task${moved === 1 ? "" : "s"} moved to Inbox.` : `Deleted "${name}".`,
+      "success"
+    );
+  };
+
   const handleAddFolderSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const trimmed = newFolderInput.trim();
@@ -871,7 +911,7 @@ export default function Dashboard({ onSignIn, onSignOut, userEmail }: DashboardP
     <TaskCard
       key={task.id}
       task={task}
-      folderColor={getFolderColor(task.category || "Inbox")}
+      folderColor={getFolderColor(task.category || "Inbox")} folderColorOf={getFolderColor}
       onStartFocus={(t) => {
         setFocusReason(null);
         setFocusedTaskId(t.id);
@@ -1476,7 +1516,7 @@ export default function Dashboard({ onSignIn, onSignOut, userEmail }: DashboardP
                         task={task}
                         compact
                         emphasizeSchedule={selectedDay === UNSCHEDULED}
-                        folderColor={getFolderColor(task.category || "Inbox")}
+                        folderColor={getFolderColor(task.category || "Inbox")} folderColorOf={getFolderColor}
                         onStartFocus={(t) => {
                           setFocusReason(null);
                           setFocusedTaskId(t.id);
@@ -1583,42 +1623,91 @@ export default function Dashboard({ onSignIn, onSignOut, userEmail }: DashboardP
 
   const foldersView = (
     <div className="flex flex-col gap-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-extrabold tracking-tight text-ink">Folders</h1>
+      <div className="flex items-center justify-between gap-3">
+        <h1 className="text-2xl font-extrabold tracking-tight text-ink">
+          Folders <span className="text-base font-semibold text-muted">({folderNames.length})</span>
+        </h1>
+        <div className="flex items-center gap-2">
+          {folderNames.length > 3 && (
+            <div className="hidden sm:flex items-center gap-1">
+              <button onClick={() => scrollFolders(-1)} aria-label="Scroll folders left" className="btn-ghost px-2">
+                <ChevronLeft size={15} />
+              </button>
+              <button onClick={() => scrollFolders(1)} aria-label="Scroll folders right" className="btn-ghost px-2">
+                <ChevronRight size={15} />
+              </button>
+            </div>
+          )}
+          {isAddingFolder && addFolderFrom === "cards" ? (
+            <form onSubmit={handleAddFolderSubmit} className="flex items-center gap-1.5">
+              <input
+                autoFocus
+                value={newFolderInput}
+                onChange={(e) => setNewFolderInput(e.target.value)}
+                onBlur={() => {
+                  if (!newFolderInput.trim()) setIsAddingFolder(false);
+                }}
+                placeholder="Folder name..."
+                className="field w-40 py-1.5 text-xs"
+              />
+              <button type="submit" className="btn-primary px-3 py-1.5 text-xs">
+                Create
+              </button>
+            </form>
+          ) : (
+            <button
+              onClick={() => {
+                setAddFolderFrom("cards");
+                setIsAddingFolder(true);
+              }}
+              className="btn-primary px-3 py-1.5 text-xs"
+            >
+              <Plus size={14} /> New folder
+            </button>
+          )}
+        </div>
       </div>
 
-      {/* Folder cards, like the reference's project cards */}
-      <div className="-mx-4 px-4 sm:mx-0 sm:px-0 flex sm:grid sm:grid-cols-[repeat(auto-fill,minmax(180px,1fr))] gap-3 overflow-x-auto sm:overflow-visible pb-1 scroll-thin">
+      {/* Folder cards: one compact row that scrolls sideways, so the
+          task list below stays in view however many folders there are. */}
+      <div
+        ref={folderStripRef}
+        className="-mx-4 px-4 sm:-mx-1 sm:px-1 -my-1 py-1 flex gap-3 overflow-x-auto snap-x snap-mandatory scroll-thin"
+        style={{ maskImage: FADE_EDGES, WebkitMaskImage: FADE_EDGES }}
+      >
         {(["All", ...folderNames] as string[]).map((cat, i) => {
           const isActive = activeCategory === cat;
           const stats = folderStats(cat);
           const color = cat === "All" ? "#18181B" : getFolderColor(cat);
           const target = `card:${cat}`;
+          const mins = cat === "All" ? pendingTasks.reduce((s, t) => s + (t.estimated_minutes || 0), 0) : categoryMinutes.get(cat) || 0;
           return (
             <motion.button
               key={cat}
               onClick={() => setActiveCategory(cat)}
               {...dropProps(target, cat === "All" ? "Inbox" : cat)}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0, rotate: dragTarget === target ? -2 : 0, scale: dragTarget === target ? 1.04 : 1 }}
-              whileHover={{ y: -3 }}
-              transition={{ type: "spring", stiffness: 300, damping: 24, delay: i * 0.03 }}
-              className={`relative flex h-36 w-44 sm:w-auto shrink-0 flex-col justify-between rounded-2xl p-4 text-left transition-shadow focus-visible:outline-none ${
-                isActive ? "ring-2 ring-ink ring-offset-2 ring-offset-white shadow-lift" : "hover:shadow-lift"
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0, scale: dragTarget === target ? 1.05 : 1 }}
+              whileHover={{ y: -2 }}
+              transition={{ type: "spring", stiffness: 320, damping: 26, delay: Math.min(i, 8) * 0.025 }}
+              title={cat === "All" ? "All tasks" : cat}
+              data-folder={cat}
+              className={`relative flex h-[88px] w-40 shrink-0 snap-start flex-col justify-between rounded-2xl px-3.5 py-3 text-left transition-shadow focus-visible:outline-none ${
+                isActive ? "ring-2 ring-ink ring-offset-2 ring-offset-white" : "hover:shadow-lift"
               }`}
               style={{ backgroundColor: color, color: cat === "All" ? "#fff" : "#18181B" }}
             >
-              <div>
-                <p className="text-base font-extrabold leading-tight truncate">{cat === "All" ? "All tasks" : cat}</p>
-                <p className="text-xs font-medium opacity-70 mt-0.5">
-                  {stats.pending} open · {formatMinutes(cat === "All" ? pendingTasks.reduce((s, t) => s + (t.estimated_minutes || 0), 0) : categoryMinutes.get(cat) || 0)}
-                </p>
+              <div className="flex items-start justify-between gap-2">
+                <p className="min-w-0 truncate text-sm font-extrabold leading-tight">{cat === "All" ? "All tasks" : cat}</p>
+                <span className="shrink-0 text-xs font-bold tabular-nums opacity-80">{stats.pending}</span>
               </div>
               <div>
-                <p className="text-[11px] font-semibold opacity-75 mb-1.5">{stats.pct}% done</p>
-                <div className={`h-1.5 w-full overflow-hidden rounded-full ${cat === "All" ? "bg-white/20" : "bg-black/10"}`}>
+                <p className="mb-1.5 text-[11px] font-medium opacity-70">
+                  {stats.pct}% done · {formatMinutes(mins)}
+                </p>
+                <div className={`h-1 w-full overflow-hidden rounded-full ${cat === "All" ? "bg-white/20" : "bg-black/10"}`}>
                   <motion.div
-                    className={`h-full rounded-full ${cat === "All" ? "bg-white" : "bg-white/90"}`}
+                    className="h-full rounded-full bg-white/90"
                     initial={{ width: 0 }}
                     animate={{ width: `${stats.pct}%` }}
                     transition={{ type: "spring", stiffness: 80, damping: 18, delay: 0.1 }}
@@ -1628,40 +1717,6 @@ export default function Dashboard({ onSignIn, onSignOut, userEmail }: DashboardP
             </motion.button>
           );
         })}
-
-        {isAddingFolder && addFolderFrom === "cards" ? (
-          <form
-            onSubmit={handleAddFolderSubmit}
-            className="flex h-36 w-44 sm:w-auto shrink-0 flex-col justify-center gap-2 rounded-2xl border border-dashed border-ink/25 bg-white p-4"
-          >
-            <input
-              autoFocus
-              value={newFolderInput}
-              onChange={(e) => setNewFolderInput(e.target.value)}
-              onBlur={() => {
-                if (!newFolderInput.trim()) setIsAddingFolder(false);
-              }}
-              placeholder="Folder name..."
-              className="field py-2 text-sm"
-            />
-            <button type="submit" className="btn-primary py-2 text-xs">
-              Create folder
-            </button>
-          </form>
-        ) : (
-          <button
-            onClick={() => {
-              setAddFolderFrom("cards");
-              setIsAddingFolder(true);
-            }}
-            className="flex h-36 w-44 sm:w-auto shrink-0 flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-ink/25 bg-white/50 text-sm font-semibold text-ink/60 hover:border-ink/50 hover:text-ink hover:bg-white transition-colors"
-          >
-            <span className="flex h-8 w-8 items-center justify-center rounded-full bg-ink text-white">
-              <Plus size={16} />
-            </span>
-            New folder
-          </button>
-        )}
       </div>
 
       {/* Selected folder */}
@@ -1708,6 +1763,16 @@ export default function Dashboard({ onSignIn, onSignOut, userEmail }: DashboardP
                 <Pencil size={13} /> Rename
               </button>
             )}
+            {activeCategory !== "All" && activeCategory !== "Inbox" && !isRenamingFolder && (
+              <button
+                onClick={handleDeleteFolder}
+                aria-label={confirmingDeleteFolder ? `Confirm delete folder ${activeCategory}` : `Delete folder ${activeCategory}`}
+                title="Tasks in this folder move to Inbox"
+                className={`btn-ghost ${confirmingDeleteFolder ? "!bg-danger !text-white !border-danger" : "!text-danger"}`}
+              >
+                <Trash2 size={13} /> {confirmingDeleteFolder ? "Delete folder? Tasks go to Inbox" : "Delete"}
+              </button>
+            )}
             <button
               onClick={() =>
                 setReceiptPayload({
@@ -1752,7 +1817,7 @@ export default function Dashboard({ onSignIn, onSignOut, userEmail }: DashboardP
                   key={task.id}
                   task={task}
                   draggable
-                  folderColor={getFolderColor(task.category || "Inbox")}
+                  folderColor={getFolderColor(task.category || "Inbox")} folderColorOf={getFolderColor}
                   onStartFocus={(t) => {
                     setFocusReason(null);
                     setFocusedTaskId(t.id);
