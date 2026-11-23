@@ -1,11 +1,15 @@
 import { NextResponse } from "next/server";
 import { aiErrorResponse } from "@/lib/aiErrors";
+import { checkAiRateLimit } from "@/lib/aiRateLimit";
 import { GoogleGenAI } from "@google/genai";
 
 export async function POST(req: Request) {
   try {
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) return NextResponse.json({ error: "Missing API Key" }, { status: 500 });
+
+    const limited = checkAiRateLimit(req);
+    if (limited) return limited;
 
     const { title } = await req.json();
 
