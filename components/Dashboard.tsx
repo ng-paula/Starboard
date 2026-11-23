@@ -216,6 +216,8 @@ export default function Dashboard({ onSignIn, onSignOut, userEmail }: DashboardP
   const [addFolderFrom, setAddFolderFrom] = useState<"sidebar" | "cards">("sidebar");
   const [newFolderInput, setNewFolderInput] = useState("");
   const [folderTaskInput, setFolderTaskInput] = useState("");
+  // AI brain-dump mode for the folder's own add box.
+  const [isFolderSparkleMode, setIsFolderSparkleMode] = useState(false);
   // Which drop target (folder row or in-panel zone) a dragged task is
   // currently hovering, so it can light up.
   const [dragTarget, setDragTarget] = useState<string | null>(null);
@@ -685,9 +687,30 @@ export default function Dashboard({ onSignIn, onSignOut, userEmail }: DashboardP
 
   // Folder Rail: the "Add a task to {folder}..." field scoped to
   // whichever folder is currently open in the main panel.
-  const handleAddTaskToFolder = (e: React.FormEvent) => {
+  const handleAddTaskToFolder = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!folderTaskInput.trim()) return;
+
+    if (isFolderSparkleMode) {
+      // Inside a specific folder, every parsed task lands in that folder;
+      // in "All tasks" the AI chooses folders itself.
+      const folder = activeCategory === "All" ? undefined : activeCategory;
+      const result = await parseText(folderTaskInput, folder ? { category: folder } : undefined);
+      if (result.status === "success") {
+        setFolderTaskInput("");
+        setIsFolderSparkleMode(false);
+        pushToast(
+          `Added ${result.count} task${result.count === 1 ? "" : "s"}${folder ? ` to ${folder}` : ""}.`,
+          "success"
+        );
+      } else if (result.status === "empty") {
+        pushToast("Didn't find any tasks in that — try describing what you need to do.", "info");
+      } else {
+        pushToast(`Couldn't parse that — ${result.message}`, "error");
+      }
+      return;
+    }
+
     addTask({
       id: crypto.randomUUID(),
       title: folderTaskInput.trim(),
@@ -1808,17 +1831,80 @@ export default function Dashboard({ onSignIn, onSignOut, userEmail }: DashboardP
           </div>
         </div>
 
-        <form onSubmit={handleAddTaskToFolder} className="panel p-2 flex items-center gap-2">
-          <input
-            value={folderTaskInput}
-            onChange={(e) => setFolderTaskInput(e.target.value)}
-            placeholder={`Add a task to ${activeCategory === "All" ? "Inbox" : activeCategory}...`}
-            aria-label={`Add a task to ${activeCategory === "All" ? "Inbox" : activeCategory}`}
-            className="flex-1 rounded-xl px-3 py-2.5 text-sm text-ink placeholder:text-ink/40 outline-none"
-          />
-          <button type="submit" disabled={!folderTaskInput.trim()} aria-label="Add task" className="btn-primary h-9 px-3 text-xs">
-            <Plus size={15} /> <span className="hidden sm:inline">Add</span>
-          </button>
+        <form onSubmit={handleAddTaskToFolder} className="panel p-2 flex flex-col gap-1">
+          <div className="flex items-start gap-2">
+            <AnimatePresence mode="wait" initial={false}>
+              {isFolderSparkleMode ? (
+                <motion.textarea
+                  key="folder-dump"
+                  initial={{ opacity: 0, height: 44 }}
+                  animate={{ opacity: 1, height: 104 }}
+                  exit={{ opacity: 0, height: 44 }}
+                  transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+                  value={folderTaskInput}
+                  onChange={(e) => setFolderTaskInput(e.target.value)}
+                  placeholder={
+                    activeCategory === "All"
+                      ? "Brain dump: type everything on your mind, AI will split it into tasks and folders..."
+                      : `Brain dump: everything for ${activeCategory}, AI will split it into tasks...`
+                  }
+                  aria-label="Brain dump input for this folder"
+                  className="flex-1 resize-none rounded-xl bg-lilac-soft/60 px-3 py-2.5 text-sm text-ink placeholder:text-ink/40 outline-none"
+                />
+              ) : (
+                <motion.input
+                  key="folder-quick"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.12 }}
+                  value={folderTaskInput}
+                  onChange={(e) => setFolderTaskInput(e.target.value)}
+                  placeholder={`Add a task to ${activeCategory === "All" ? "Inbox" : activeCategory}...`}
+                  aria-label={`Add a task to ${activeCategory === "All" ? "Inbox" : activeCategory}`}
+                  className="flex-1 rounded-xl px-3 py-2.5 text-sm text-ink placeholder:text-ink/40 outline-none"
+                />
+              )}
+            </AnimatePresence>
+            <div className={`flex items-center gap-1.5 shrink-0 ${isFolderSparkleMode ? "self-end" : ""}`}>
+              <button
+                type="button"
+                onClick={() => setIsFolderSparkleMode(!isFolderSparkleMode)}
+                aria-pressed={isFolderSparkleMode}
+                aria-label="Toggle AI brain-dump mode for this folder"
+                title="AI brain dump"
+                className={`flex items-center gap-1.5 rounded-lg px-2.5 py-2 text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/20 ${
+                  isFolderSparkleMode ? "bg-lilac text-lilac-deep" : "text-muted hover:bg-canvas hover:text-ink"
+                }`}
+              >
+                <Sparkles size={14} /> <span className="hidden sm:inline">AI</span>
+              </button>
+              <button
+                type="submit"
+                disabled={isLoadingAi || !folderTaskInput.trim()}
+                aria-label={isFolderSparkleMode ? "Parse brain dump into tasks for this folder" : "Add task"}
+                className="btn-primary h-9 px-3 text-xs"
+              >
+                {isLoadingAi && isFolderSparkleMode ? <Sparkles size={14} className="animate-spin" /> : <Plus size={15} />}
+                <span className="hidden sm:inline">{isFolderSparkleMode ? "Sort it" : "Add"}</span>
+              </button>
+            </div>
+          </div>
+          <AnimatePresence mode="wait">
+            {isLoadingAi && isFolderSparkleMode && (
+              <motion.p
+                key={aiMessageIndex}
+                initial={{ opacity: 0, y: 4 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -4 }}
+                transition={{ duration: 0.18 }}
+                className="px-3 pb-1 text-xs font-medium text-lilac-deep"
+                aria-live="polite"
+              >
+                {AI_LOADING_MESSAGES[aiMessageIndex]}
+              </motion.p>
+            )}
+          </AnimatePresence>
         </form>
 
         <motion.div

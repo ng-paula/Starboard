@@ -31,7 +31,9 @@ export function useBrainDump() {
   const [isLoadingAi, setIsLoadingAi] = useState(false);
   const addMultipleTasks = useTaskStore((state) => state.addMultipleTasks);
 
-  const parseText = async (rawText: string): Promise<ParseTextResult> => {
+  // `category`: put every parsed task in this folder (used when brain
+  // dumping from inside a folder) instead of the folder the AI picked.
+  const parseText = async (rawText: string, options?: { category?: string }): Promise<ParseTextResult> => {
     setIsLoadingAi(true);
     try {
       const res = await fetch("/api/parse", {
@@ -61,7 +63,7 @@ export function useBrainDump() {
           priority: t.priority,
           energy_level: t.energy_level,
           estimated_minutes: t.estimated_minutes,
-          category: t.category,
+          category: options?.category || t.category,
           due_date: dueHintToDate(t.due_hint),
           subtasks: []
         }));
