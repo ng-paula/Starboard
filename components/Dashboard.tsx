@@ -1393,7 +1393,10 @@ export default function Dashboard({ onSignIn, onSignOut, userEmail }: DashboardP
             </h2>
             <div className="flex items-center gap-2">
               {optimizeButton}
-              <button onClick={() => setReceiptPayload({ tasks: displayedTasks, title: "Starboard" })} className="btn-ghost">
+              <button
+                onClick={() => setReceiptPayload({ tasks: displayedTasks, title: selectedDay === null ? "Schedule" : dayHeading })}
+                className="btn-ghost"
+              >
                 <Receipt size={14} /> Print
               </button>
             </div>
@@ -1780,7 +1783,7 @@ export default function Dashboard({ onSignIn, onSignOut, userEmail }: DashboardP
         <h1 className="text-2xl font-extrabold tracking-tight text-ink">Completed</h1>
         <div className="flex items-center gap-2">
           <button
-            onClick={() => setReceiptPayload({ tasks: displayedTasks, title: "Starboard" })}
+            onClick={() => setReceiptPayload({ tasks: displayedTasks, title: "Completed" })}
             disabled={displayedTasks.length === 0}
             className="btn-ghost"
           >
@@ -2052,6 +2055,7 @@ export default function Dashboard({ onSignIn, onSignOut, userEmail }: DashboardP
             key="receipt"
             tasks={receiptPayload.tasks}
             title={receiptPayload.title}
+            folderColor={getFolderColor}
             onClose={() => setReceiptPayload(null)}
           />
         )}

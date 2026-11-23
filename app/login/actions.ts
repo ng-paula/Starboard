@@ -20,6 +20,14 @@ export async function login(formData: FormData) {
   const { error } = await supabase.auth.signInWithPassword({ email, password });
 
   if (error) {
+    // Signed up but never clicked the confirmation link: show the
+    // "check your inbox" panel (with its resend option) instead of a
+    // bare error.
+    if (/not confirmed/i.test(error.message)) {
+      redirect(
+        `/login?error=${encodeURIComponent("Please confirm your email first - use the link we sent you, or resend it below.")}&pending=1`
+      );
+    }
     redirect(`/login?error=${encodeURIComponent(friendlyAuthError(error.message))}`);
   }
 
