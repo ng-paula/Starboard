@@ -237,9 +237,12 @@ export const useTaskStore = create<TaskState>((set, get) => {
 
     reorderTasks: (sortedTasks) => {
       set({ tasks: sortedTasks });
-      remote('reordering tasks', () =>
+      // Full rows, not just { id, sort_order }: Postgres checks NOT NULL
+      // columns (user_id, title) on the would-be INSERT before ON CONFLICT
+      // turns it into an update, so a partial upsert always failed.
+      remote('reordering tasks', (userId) =>
         supabase.from('tasks').upsert(
-          sortedTasks.map((t, i) => ({ id: t.id, sort_order: i })),
+          sortedTasks.map((t, i) => taskToRow(t, userId, i)),
           { onConflict: 'id' }
         )
       );

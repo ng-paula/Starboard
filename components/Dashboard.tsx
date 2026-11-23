@@ -205,6 +205,10 @@ export default function Dashboard({ onSignIn, onSignOut, userEmail }: DashboardP
   const [isRenamingFolder, setIsRenamingFolder] = useState(false);
   const [folderNameInput, setFolderNameInput] = useState("");
   const [isAddingFolder, setIsAddingFolder] = useState(false);
+  // Which "new folder" form is open - the sidebar's or the folder cards'.
+  // Both are on screen in the Folders view; opening both at once made the
+  // second autoFocus blur (and close) the first.
+  const [addFolderFrom, setAddFolderFrom] = useState<"sidebar" | "cards">("sidebar");
   const [newFolderInput, setNewFolderInput] = useState("");
   const [folderTaskInput, setFolderTaskInput] = useState("");
   // Which drop target (folder row or in-panel zone) a dragged task is
@@ -630,7 +634,7 @@ export default function Dashboard({ onSignIn, onSignOut, userEmail }: DashboardP
         priority: "important",
         energy_level: "high_focus",
         estimated_minutes: 25,
-        category: activeCategory !== "All" ? activeCategory : "Inbox",
+        category: activeView === "Categories" && activeCategory !== "All" ? activeCategory : "Inbox",
         due_date: activeView === "Timeline" && selectedDay && selectedDay !== UNSCHEDULED ? selectedDay : null,
         subtasks: [],
       });
@@ -732,21 +736,34 @@ export default function Dashboard({ onSignIn, onSignOut, userEmail }: DashboardP
           });
           const data = await res.json();
           if (!res.ok) throw new Error(data.error || "Optimization failed");
-          return data.tasks as Task[];
+          // The AI's answer is only trusted for ORDER. Its copies of the
+          // tasks can't be stored as-is: it may rename folders, and it
+          // never returns steps or completion times. Unknown or duplicate
+          // ids are ignored, and anything it dropped keeps its place at
+          // the end of the group.
+          const groupIds = new Set(group.map((t) => t.id));
+          const orderedIds: string[] = [];
+          for (const t of (data.tasks || []) as { id?: string }[]) {
+            if (t?.id && groupIds.has(t.id) && !orderedIds.includes(t.id)) orderedIds.push(t.id);
+          }
+          for (const t of group) if (!orderedIds.includes(t.id)) orderedIds.push(t.id);
+          return orderedIds;
         })
       );
 
-      const optimizedFlat = results.flat();
-      const handledIds = new Set([...optimizedFlat, ...singleTaskLeftovers].map((t) => t.id));
+      const orderedIds = [...results.flat(), ...singleTaskLeftovers.map((t) => t.id)];
 
       // Read the store directly instead of the `tasks` closed over at
       // click time - the request can take a few seconds, and nothing else
-      // disables the rest of the UI while it's in flight. If the user
-      // added, deleted, or refiled a task in the meantime, merging
-      // against a stale snapshot would silently discard that change.
+      // disables the rest of the UI while it's in flight. Using the
+      // latest objects means an edit made meanwhile isn't overwritten,
+      // and a task deleted meanwhile isn't brought back.
       const latestTasks = useTaskStore.getState().tasks;
+      const latestById = new Map(latestTasks.map((t) => [t.id, t]));
+      const ordered = orderedIds.map((id) => latestById.get(id)).filter((t): t is Task => !!t);
+      const handledIds = new Set(orderedIds);
       const rest = latestTasks.filter((t) => !handledIds.has(t.id));
-      reorderTasks([...optimizedFlat, ...singleTaskLeftovers, ...rest]);
+      reorderTasks([...ordered, ...rest]);
       pushToast("Flow optimized.", "success");
     } catch (err: any) {
       pushToast(`Optimization error: ${err.message}`, "error");
@@ -1226,7 +1243,7 @@ export default function Dashboard({ onSignIn, onSignOut, userEmail }: DashboardP
                     );
                   })}
 
-                  {isAddingFolder ? (
+                  {isAddingFolder && addFolderFrom === "sidebar" ? (
                     <form onSubmit={handleAddFolderSubmit} className="flex items-center gap-1.5 px-2 pt-1">
                       <input
                         autoFocus
@@ -1244,7 +1261,10 @@ export default function Dashboard({ onSignIn, onSignOut, userEmail }: DashboardP
                     </form>
                   ) : (
                     <button
-                      onClick={() => setIsAddingFolder(true)}
+                      onClick={() => {
+                        setAddFolderFrom("sidebar");
+                        setIsAddingFolder(true);
+                      }}
                       className="flex items-center gap-2.5 rounded-lg px-3 py-1.5 text-[13px] font-medium text-ink/60 hover:text-ink transition-colors"
                     >
                       <span className="flex h-4 w-4 items-center justify-center rounded-full bg-ink text-white">
@@ -1373,7 +1393,10 @@ export default function Dashboard({ onSignIn, onSignOut, userEmail }: DashboardP
             </h2>
             <div className="flex items-center gap-2">
               {optimizeButton}
-              <button onClick={() => setReceiptPayload({ tasks: displayedTasks, title: "Starboard" })} className="btn-ghost">
+              <button
+                onClick={() => setReceiptPayload({ tasks: displayedTasks, title: selectedDay === null ? "Schedule" : dayHeading })}
+                className="btn-ghost"
+              >
                 <Receipt size={14} /> Print
               </button>
             </div>
@@ -1606,7 +1629,7 @@ export default function Dashboard({ onSignIn, onSignOut, userEmail }: DashboardP
           );
         })}
 
-        {isAddingFolder ? (
+        {isAddingFolder && addFolderFrom === "cards" ? (
           <form
             onSubmit={handleAddFolderSubmit}
             className="flex h-36 w-44 sm:w-auto shrink-0 flex-col justify-center gap-2 rounded-2xl border border-dashed border-ink/25 bg-white p-4"
@@ -1627,7 +1650,10 @@ export default function Dashboard({ onSignIn, onSignOut, userEmail }: DashboardP
           </form>
         ) : (
           <button
-            onClick={() => setIsAddingFolder(true)}
+            onClick={() => {
+              setAddFolderFrom("cards");
+              setIsAddingFolder(true);
+            }}
             className="flex h-36 w-44 sm:w-auto shrink-0 flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-ink/25 bg-white/50 text-sm font-semibold text-ink/60 hover:border-ink/50 hover:text-ink hover:bg-white transition-colors"
           >
             <span className="flex h-8 w-8 items-center justify-center rounded-full bg-ink text-white">
@@ -1757,7 +1783,7 @@ export default function Dashboard({ onSignIn, onSignOut, userEmail }: DashboardP
         <h1 className="text-2xl font-extrabold tracking-tight text-ink">Completed</h1>
         <div className="flex items-center gap-2">
           <button
-            onClick={() => setReceiptPayload({ tasks: displayedTasks, title: "Starboard" })}
+            onClick={() => setReceiptPayload({ tasks: displayedTasks, title: "Completed" })}
             disabled={displayedTasks.length === 0}
             className="btn-ghost"
           >
@@ -1964,17 +1990,14 @@ export default function Dashboard({ onSignIn, onSignOut, userEmail }: DashboardP
           </div>
 
           <main className="mx-auto w-full max-w-6xl px-4 py-6 pb-28 sm:px-6 lg:px-8 lg:pb-10">
-            <AnimatePresence mode="wait" initial={false}>
-              <motion.div
-                key={activeView}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -6 }}
-                transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
-              >
-                {activeView === "Timeline" ? timelineView : activeView === "Categories" ? foldersView : completedView}
-              </motion.div>
-            </AnimatePresence>
+            <motion.div
+              key={activeView}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+            >
+              {activeView === "Timeline" ? timelineView : activeView === "Categories" ? foldersView : completedView}
+            </motion.div>
           </main>
         </div>
       </div>
@@ -2032,6 +2055,7 @@ export default function Dashboard({ onSignIn, onSignOut, userEmail }: DashboardP
             key="receipt"
             tasks={receiptPayload.tasks}
             title={receiptPayload.title}
+            folderColor={getFolderColor}
             onClose={() => setReceiptPayload(null)}
           />
         )}

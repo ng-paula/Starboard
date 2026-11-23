@@ -1,13 +1,12 @@
 import { createBrowserClient } from "@supabase/ssr";
+import { supabaseUrl, supabaseAnonKey } from "./config";
 
 /**
  * Supabase client for Client Components ("use client" files - anything
  * running in the browser). Safe to call repeatedly; @supabase/ssr handles
- * the underlying singleton itself.
+ * the underlying singleton itself. Never throws, even if Supabase isn't
+ * configured (see ./config).
  */
 export function createClient() {
-  return createBrowserClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  );
+  return createBrowserClient(supabaseUrl, supabaseAnonKey);
 }
